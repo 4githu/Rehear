@@ -24,6 +24,8 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+from ops_health import install as install_ops_health
+install_ops_health(app)
 app.include_router(auth_router)
 app.include_router(odi_router)
 app.add_middleware(

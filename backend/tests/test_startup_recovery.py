@@ -29,7 +29,8 @@ def test_real_uvicorn_startup_on_isolated_candidate_copy(tmp_path):
     root = Path(__file__).resolve().parents[1]
     candidate = tmp_path / 'candidate'
     candidate.mkdir()
-    shutil.copy2(root / 'main.py', candidate / 'main.py')
+    for module in ('main.py', 'ops_health.py'):
+        shutil.copy2(root / module, candidate / module)
     def ignore_nonsource(directory, names):
         return {name for name in names if name in {'__pycache__', 'tests', 'evc_logs', 'media', 'uploads'} or (not (Path(directory) / name).is_dir() and not name.endswith(('.py', '.sql')))}
 
