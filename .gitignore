@@ -22,3 +22,11 @@ uploads/
 media/
 project.inlang/cache/
 **/newrepo
+
+# Assets belonging to the original shared site's other products
+/frontend/src/lib/server/assets/
+/frontend/static/docs/
+/frontend/static/downloads/
+/frontend/static/margin/
+/frontend/static/netaq-design/
+/frontend/static/pdfjs/
