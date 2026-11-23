@@ -63,7 +63,8 @@ def make_bundle_id() -> str:
 
 
 def as_storage_path(path: Path) -> str:
-    return path.resolve().relative_to(BASE_DIR).as_posix()
+    relative = path.resolve().relative_to(STORAGE_ROOT.resolve())
+    return (Path("storage") / "odi" / relative).as_posix()
 
 
 def path_from_storage_path(storage_path: str) -> Path:
