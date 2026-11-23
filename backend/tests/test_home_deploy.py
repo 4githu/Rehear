@@ -184,3 +184,24 @@ def test_legacy_patch_is_compilable_and_idempotent(tmp_path):
     assert 'else:\n    # Ensure additive report tables\n    recover()' in once[0]
     assert 'app.include_router(auth_router)' in once[0]
     compile(once[0], str(main), 'exec'); compile(once[1], str(service), 'exec')
+
+
+def test_retention_preserves_active_previous_initial_and_unmanaged_files(tmp_path):
+    import os
+    releases = tmp_path / 'releases'; releases.mkdir()
+    backups = tmp_path / 'backups'; backups.mkdir()
+    for i, ch in enumerate('abcde'):
+        p = releases / (ch * 40); p.mkdir(); os.utime(p, (i + 1, i + 1))
+    external = tmp_path / 'external'; external.mkdir(); (external / 'keep').touch()
+    (releases / ('f' * 40)).symlink_to(external, target_is_directory=True)
+    (backups / '20261123-000000-000000-initial').mkdir()
+    (backups / 'operator-notes').mkdir()
+    for i in range(5):
+        p = backups / f'20261123-00000{i}-000000-aaaaaaaaaa'; p.mkdir(); os.utime(p, (i + 1, i + 1))
+    deploy.atomic_json(tmp_path / 'state.json', {'active': {'sha': 'a'*40}, 'previous': {'sha': 'b'*40}})
+    deploy.prune_generated_artifacts({'home': str(tmp_path)})
+    assert {p.name for p in releases.iterdir() if not p.is_symlink()} == {c * 40 for c in 'abe'}
+    assert (external / 'keep').exists()
+    assert len(list(backups.iterdir())) == 5
+    assert (backups / '20261123-000000-000000-initial').exists()
+    assert (backups / 'operator-notes').exists()
