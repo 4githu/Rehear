@@ -11,3 +11,5 @@ PR은 GitHub의 격리된 러너에서 검사하고, 성공한 `main`의 push CI
 일상 운영은 `python <runtime>/bin/deploy.py --config <runtime>/config.json status|poll|deploy|rollback`입니다. `app.rehear.autodeploy` LaunchAgent가 로그인된 홈서버에서 60초마다 확인하며, Mac이 꺼져 있으면 다음 기동 때 확인합니다. 실제 선택 리비전은 `https://rehear.kr/_rehear/deployment`에서 확인합니다. 내부 `/_ops/*`는 공개 프록시에서 차단합니다.
 
 외부 호스팅으로 옮길 때도 `frontend: BUILD_TARGET=node npm run build`, `backend: uvicorn main:app --workers 1`, `REHEAR_ODI_DB_PATH`, `REHEAR_DATA_ROOT` 및 기존 `/auth` 연결 계약을 재사용할 수 있습니다. Vercel 프런트 어댑터도 기존 설정에 남아 있습니다. SQLite·업로드·인메모리 EVC를 쓰는 현재 백엔드를 서버리스로 그대로 복사하는 구성은 아닙니다.
+
+배포 성공 후 활성·이전 릴리스와 최신 후보를 남기고 오래된 생성 릴리스를 정리합니다. 일반 배포 백업은 최근 3개를 보존하며 최초 이관 백업과 표준 이름 밖의 파일은 자동 삭제하지 않습니다. 사용자 DB·현재 미디어는 이 정리 대상에 포함하지 않습니다.

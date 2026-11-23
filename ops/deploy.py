@@ -320,6 +320,26 @@ def smoke(cfg, active):
         raise RuntimeError('ODI smoke failed')
 
 
+def prune_generated_artifacts(cfg):
+    """Bound generated release/snapshot storage; preserve active, previous and initial data."""
+    home = Path(cfg['home']); state = read_state(home)
+    protected = {r['sha'] for r in (state.get('active'), state.get('previous')) if r}
+    releases = sorted((p for p in (home / 'releases').iterdir()
+                       if p.is_dir() and not p.is_symlink() and SHA.fullmatch(p.name)),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+    # Preserve the newest candidate as well as both rollback slots.
+    keep = protected | {p.name for p in releases[:1]}
+    for release in releases:
+        if release.name not in keep:
+            shutil.rmtree(release)
+    backups = sorted((p for p in (home / 'backups').iterdir()
+                      if p.is_dir() and not p.is_symlink()
+                      and re.fullmatch(r'[0-9]{8}-[0-9]{6}-[0-9]{6}-[0-9a-f]{10}', p.name)),
+                     key=lambda p: p.stat().st_mtime, reverse=True)
+    for backup in backups[3:]:
+        shutil.rmtree(backup)
+
+
 def activate(cfg, release, *, rollback=False):
     home = Path(cfg['home']); state = read_state(home); old = state['active']
     check_idle(old)
@@ -354,6 +374,11 @@ def activate(cfg, release, *, rollback=False):
             shutil.copy2(source, target.with_suffix('.next'))
             os.replace(target.with_suffix('.next'), target)
     atomic_json(home / 'last-result.json', {'status': 'deployed', 'sha': new['sha'], 'at': time.time()})
+    try:
+        prune_generated_artifacts(cfg)
+    except OSError:
+        # Storage cleanup must not turn a healthy release into a failed deployment.
+        print('Generated storage cleanup deferred', flush=True)
     print('DEPLOYED', new['sha'], flush=True)
     return new
 
