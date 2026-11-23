@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ from uuid import uuid4
 from fastapi import HTTPException, UploadFile
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+BASE_DIR = Path(os.environ.get("REHEAR_DATA_ROOT", str(Path(__file__).resolve().parents[2]))).resolve()
 STORAGE_ROOT = (BASE_DIR / "storage" / "odi").resolve()
 
 TEMP_EXPIRE_DAYS = 1
