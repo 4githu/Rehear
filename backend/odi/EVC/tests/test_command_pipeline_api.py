@@ -282,16 +282,17 @@ def test_fastapi_start_read_and_update_contract(monkeypatch) -> None:
             )
             assert read.status_code == 200
 
+            request_id = str(uuid4())
+            update_data = {
+                "session_id": started["session_id"], "request_id": request_id,
+                "expected_step": "0", "client_time_s": "1.0",
+                "current_slide_index": "0", "language": "ko-KR",
+                "utterance_position": "utterance_boundary",
+            }
             update = await client.post(
                 "/odi/xreal_rehear/evc/update",
                 headers=headers,
-                data={
-                    "session_id": started["session_id"],
-                    "request_id": str(uuid4()),
-                    "expected_step": "0",
-                    "client_time_s": "1.0",
-                    "utterance_position": "utterance_boundary",
-                },
+                data=update_data,
                 files={"audio": ("voice.wav", b"RIFF-test", "audio/wav")},
             )
             assert update.status_code == 200, update.text
@@ -300,6 +301,19 @@ def test_fastapi_start_read_and_update_contract(monkeypatch) -> None:
             assert len(payload["audiences"]) == 6
             assert all("archetype" not in item for item in payload["audiences"])
             assert "commands" in payload
+            replay = await client.post(
+                "/odi/xreal_rehear/evc/update", headers=headers, data=update_data,
+                files={"audio": ("voice.wav", b"RIFF-test", "audio/wav")},
+            )
+            assert replay.status_code == 200
+            assert replay.json() == payload
+            stale = await client.post(
+                "/odi/xreal_rehear/evc/update", headers=headers,
+                data={**update_data, "request_id": str(uuid4())},
+                files={"audio": ("voice.wav", b"RIFF-test", "audio/wav")},
+            )
+            assert stale.status_code == 409
+            assert stale.headers["content-type"].startswith("application/json")
 
             deleted = await client.delete(
                 f"/odi/xreal_rehear/evc/sessions/{started['session_id']}",

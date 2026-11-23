@@ -16,6 +16,8 @@ Re:hear의 프런트엔드와 백엔드를 함께 관리하는 독립 저장소�
 
 백엔드 의존성은 `backend/requirements.txt`, EVC 의존성은 `backend/requirements-evc*.txt`를 확인합니다. 독립 가상환경과 격리된 테스트 데이터를 사용합니다. Google OAuth는 기존 Sushisite 인증 서비스에 연결하는 구조이며 이 후보가 해당 운영 인증 서버를 대체하지 않습니다.
 
+평가와 v2 보고서는 `OPENAI_EVC_MODEL`을 공유하며 질문은 별도 `OPENAI_QUESTION_MODEL`을 사용합니다. 지원되는 모델의 reasoning을 명시하려면 `OPENAI_EVC_REASONING_EFFORT=none` 등을 설정합니다. 미설정 시 매개변수를 보내지 않으며 자동 모델 대체는 없습니다. 예를 들어 `OPENAI_EVC_MODEL=gpt-6-luna`와 `OPENAI_EVC_REASONING_EFFORT=none`을 함께 지정할 수 있으나 실제 계정 지원과 스키마·지연은 별도 검증해야 합니다. 설정 변경에는 프로세스 재시작이 필요합니다.
+
 `node frontend/tests/isolation/routing.test.mjs`로 화면/API 경계 검사를 실행합니다. `backend/tests/test_ingress_contract.py`는 실제 프런트·백엔드·Caddy 및 모의 인증 서버를 loopback에서 검증합니다. 프런트 의존성과 Caddy가 필요하며 `TMPDIR`은 별도 임시 폴더여야 합니다. 운영 환경 파일이나 데이터를 공급하지 않습니다.
 
 ## 현재 검증 범위와 남은 작업

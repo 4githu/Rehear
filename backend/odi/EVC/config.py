@@ -30,6 +30,9 @@ def _bool_env(name: str, default: bool) -> bool:
 
 
 OPENAI_EVC_MODEL = os.getenv("OPENAI_EVC_MODEL", "gpt-4.1-mini")
+OPENAI_EVC_REASONING_EFFORT = os.getenv("OPENAI_EVC_REASONING_EFFORT", "").strip().lower() or None
+if OPENAI_EVC_REASONING_EFFORT not in {None, "none", "low", "medium", "high", "xhigh", "max"}:
+    raise RuntimeError("OPENAI_EVC_REASONING_EFFORT is invalid")
 OPENAI_QUESTION_MODEL = os.getenv("OPENAI_QUESTION_MODEL", "gpt-4.1-mini")
 DEEPGRAM_PRIMARY_MODEL = os.getenv("DEEPGRAM_PRIMARY_MODEL", "nova-3")
 EVC_DEBUG_LOG = _bool_env(

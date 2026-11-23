@@ -5,7 +5,7 @@ import json
 import os
 from typing import Any, Protocol
 
-from .config import EVC_LLM_TIMEOUT_S, EVC_PROVIDER_RETRIES, OPENAI_EVC_MODEL
+from .config import EVC_LLM_TIMEOUT_S, EVC_PROVIDER_RETRIES, OPENAI_EVC_MODEL, OPENAI_EVC_REASONING_EFFORT
 from .provider_execution import ProviderCapacityError, provider_executor
 from .schema import (
     ContentScores,
@@ -39,6 +39,10 @@ class EvaluationProviderError(RuntimeError):
     pass
 
 
+class EvaluationProviderConfigurationError(EvaluationProviderError):
+    pass
+
+
 class SegmentEvaluationProvider(Protocol):
     def evaluate(self, payload: dict[str, Any]) -> SegmentEvaluation: ...
 
@@ -48,9 +52,11 @@ class OpenAISegmentEvaluationProvider:
         self,
         api_key: str | None = None,
         model: str = OPENAI_EVC_MODEL,
+        reasoning_effort: str | None = OPENAI_EVC_REASONING_EFFORT,
     ) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
+        self.reasoning_effort = reasoning_effort
 
     def evaluate(self, payload: dict[str, Any]) -> SegmentEvaluation:
         if not self.api_key:
@@ -72,6 +78,7 @@ class OpenAISegmentEvaluationProvider:
                     },
                 ],
                 response_format=SegmentEvaluation,
+                **({"reasoning_effort": self.reasoning_effort} if self.reasoning_effort else {}),
             )
             parsed = completion.choices[0].message.parsed
             if parsed is None:
@@ -82,6 +89,8 @@ class OpenAISegmentEvaluationProvider:
         except EvaluationProviderError:
             raise
         except Exception as exc:
+            if getattr(exc, "code", None) == "model_not_found":
+                raise EvaluationProviderConfigurationError("Configured evaluation model is unavailable") from exc
             raise EvaluationProviderError(f"OpenAI segment evaluation failed: {exc}") from exc
 
 
@@ -227,6 +236,8 @@ async def request_segment_evaluation(
                 f"segment evaluation timed out after {timeout_s} seconds"
             )
             last_error.__cause__ = exc
+        except EvaluationProviderConfigurationError:
+            raise
         except EvaluationProviderError as exc:
             last_error = exc
         except Exception as exc:

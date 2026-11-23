@@ -18,7 +18,7 @@ from .provider_execution import ProviderCapacityError
 from .observability import record_reaction_tick
 from .report_schema import ReportReactionRecord
 from odi.db import odidb
-from .evaluation import EvaluationProviderError
+from .evaluation import EvaluationProviderError, EvaluationProviderConfigurationError
 from .inputs import (
     InputValidationError,
     PayloadTooLargeError,
@@ -415,6 +415,8 @@ def _http_error(exc: Exception) -> HTTPException:
             502,
             detail={"code": "stt_provider_error", "message": "STT provider failed"},
         )
+    if isinstance(exc, EvaluationProviderConfigurationError):
+        return HTTPException(503, detail={"code": "evaluation_provider_configuration_error", "message": "Configured evaluation model is unavailable"})
     if isinstance(exc, EvaluationProviderError):
         return HTTPException(
             502,

@@ -226,6 +226,7 @@ def test_cache_bypass_causes_real_engine_calls_and_identity_isolation():
     assert importlib.import_module("rehear_ai.engines.qwen_local").QwenLocalEngine(qwen_config(), loader=lambda _: None).cache_key(evidence, rubric) != key
 
 
+@pytest.mark.skipif(not (Path(__file__).resolve().parents[3] / "tools/rehear_cli").is_dir(), reason="research CLI is not shipped in the product repository")
 def test_cli_subprocess_and_json_output(tmp_path):
     case, rubric_file, output = tmp_path / "case.json", tmp_path / "rubric.json", tmp_path / "result.json"
     case.write_text(pack().model_dump_json())

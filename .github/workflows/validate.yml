@@ -60,4 +60,4 @@ jobs:
           brew install caddy
       - name: Exercise loopback integration
         working-directory: backend
-        run: python -m pytest -q tests/test_ingress_contract.py tests/test_startup_recovery.py tests/test_runtime_paths.py tests/test_external_storage.py tests/test_home_deploy.py odi/files/tests odi/db/tests
+        run: python -m pytest -q -rs tests/test_ingress_contract.py tests/test_startup_recovery.py tests/test_runtime_paths.py tests/test_external_storage.py tests/test_home_deploy.py odi/files/tests odi/db/tests odi/EVC/tests
