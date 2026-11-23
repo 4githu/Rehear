@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   candidate:
-    runs-on: macos-14
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
       TMPDIR: /tmp
@@ -43,7 +43,8 @@ jobs:
       - name: Install backend test dependencies and Caddy
         run: |
           python -m pip install -r backend/requirements-evc-dev.txt
-          brew install caddy
+          sudo apt-get update -qq
+          sudo apt-get install -y caddy
       - name: Exercise loopback integration
         working-directory: backend
         run: python -m pytest -q tests/test_ingress_contract.py
