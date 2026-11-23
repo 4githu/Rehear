@@ -1,0 +1,339 @@
+<!-- src/routes/session/presentation/confirm/+page.svelte -->
+
+<script lang="ts">
+ import { locale as siteLocale, copy as tr } from "$lib/odi/i18n";
+	import { locale, copy } from "$lib/odi/i18n";
+	import TemplateSaveBar from '$lib/odi/components/session/TemplateSaveBar.svelte';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import presenimage from '$lib/odi/assets/presentation-ready.png';
+
+	import { session, template, type PresentationTemplate } from '$lib/odi/stores';
+	import { auth } from '$lib/stores/mainauth';
+	import SessionConfirmCard from '$lib/odi/components/session/SessionConfirmCard.svelte';
+	import SessionModeModal from '$lib/odi/components/session/SessionModeModal.svelte';
+	import { formatDurationMinutes } from '$lib/odi/utils/duration';
+
+	import {
+		sessiontime,
+		audiencenum,
+		audiencepersona,
+		podium as sessionenviron,
+		goggle
+	} from '$lib/odi/icons';
+
+	let draft = $state(null as PresentationTemplate | null);
+	let clientReady = $state(false);
+	let showSessionModeModal = $state(false);
+	let isCheckingAccount = $state(false);
+	let startError = $state('');
+
+	const EXPERIENCE_ACCOUNT_EMAIL = 'xrealrehear@gmail.com';
+
+	function getPresentationDraft(): PresentationTemplate | null {
+		const current = template.get();
+
+		if (current?.type === 'presentation' && current.files.slide?.storage_path) {
+			return current;
+		}
+
+		return null;
+	}
+
+	onMount(() => {
+		const current = getPresentationDraft();
+		if (current === null) {
+			startError = '발표 자료 PDF를 업로드한 뒤 세션을 시작해주세요.';
+			void goto('/session/presentation/upload');
+			return;
+		}
+		draft = current;
+		clientReady = true;
+	});
+
+	async function getCurrentEmail() {
+		// 레이아웃에 남아 있을 수 있는 이전 인증 store 대신 서버 쿠키를 다시 확인합니다.
+		const payload = await auth.check();
+		return payload?.data?.email?.trim().toLowerCase() ?? '';
+	}
+
+	async function openSession() {
+		if (!clientReady || isCheckingAccount || !draft?.files.slide?.storage_path) {
+			await goto('/session/presentation/upload');
+			return;
+		}
+
+		isCheckingAccount = true;
+		startError = '';
+
+		try {
+			const email = await getCurrentEmail();
+
+			if (email === EXPERIENCE_ACCOUNT_EMAIL) {
+				showSessionModeModal = true;
+				return;
+			}
+
+			await prepareRegularSession();
+		} catch (error) {
+			startError = error instanceof Error ? error.message : '세션을 시작하지 못했습니다.';
+		} finally {
+			isCheckingAccount = false;
+		}
+	}
+
+	async function prepareRegularSession() {
+		await session.startFromCurrentTemplate();
+		await goto('/waitvr?mode=regular');
+	}
+
+	async function selectSessionMode(mode: 'experience' | 'regular') {
+		showSessionModeModal = false;
+
+		isCheckingAccount = true;
+		startError = '';
+		try {
+			if (mode === 'experience') {
+				await session.startExperiencePresentation();
+				await goto('/waitvr?mode=experience');
+			} else {
+				await prepareRegularSession();
+			}
+		} catch (error) {
+			startError = error instanceof Error ? error.message : '세션을 시작하지 못했습니다.';
+		} finally {
+			isCheckingAccount = false;
+		}
+	}
+
+	const title = $derived(draft?.environment.title || '발표 제목 없음');
+	const purpose = $derived(draft?.environment.purpose || '발표 목적 없음');
+	const duration = $derived(formatDurationMinutes(draft?.environment.duration_minutes ?? 10));
+	const place = $derived(draft?.environment.place || '발표 환경 없음');
+	const audienceSize = $derived(`${draft?.audience.audience_count ?? 6}명`);
+	const persona = $derived(
+		`전문성 ${draft?.audience.expertise_level ?? '중간'} + 관심도 ${draft?.audience.interest_level ?? '중간'}`
+	);
+
+	const slideName = $derived(draft?.files.slide?.original_name ?? '발표자료 없음');
+	const paperName = $derived(draft?.files.paper?.original_name ?? '논문 없음');
+
+	const summaryItems = $derived([
+		{ label: copy($locale, "발표 시간"), value: duration, icon: sessiontime },
+		{ label: copy($locale, "발표 환경"), value: place, icon: sessionenviron },
+		{ label: copy($locale, "청중 규모"), value: audienceSize, icon: audiencenum },
+		{ label: '청중 페르소나', value: persona, icon: audiencepersona }
+	]);
+</script>
+
+<main class="confirm-page">
+	<header class="page-header">
+		<p class="page-label text-caption-main">Session Setup</p>
+
+		<div class="title-group">
+			<h1 class="text-title-main">Ready for Re:hear 🌟</h1>
+			<p class="subtitle text-caption-main">
+				{copy($locale, "모든 설정이 완료되었어요. 대기 중인 AI 청중과 함께 실전 같은 발표 연습을 시작해보세요!")}
+			</p>
+		</div>
+	</header>
+
+	<section class="info-card">
+		<p class="text-body-medium">{copy($locale, "발표 정보")}</p>
+
+		<div class="info-line">
+			<strong class="text-body-bold">{title}</strong>
+			<span class="dot">·</span>
+			<strong class="text-body-bold">{purpose}</strong>
+		</div>
+
+		<div class="file-line text-caption-medium">
+			<span>발표자료: {slideName}</span>
+			<span>논문: {paperName}</span>
+		</div>
+	</section>
+
+	<SessionConfirmCard previewImage={presenimage} items={summaryItems} />
+
+	<section class="start-area">
+		<a class="edit-environment" href="/session/presentation">{copy($locale, "환경 수정하기")}</a>
+		<button
+			type="button"
+			class="start-link clickable text-button-start"
+			disabled={!clientReady || isCheckingAccount}
+			onclick={openSession}
+		>
+			<img src={goggle} alt="" />
+			<span
+				>{!clientReady
+					? tr($siteLocale, "페이지 준비 중...")
+					: isCheckingAccount
+						? tr($siteLocale, "계정 확인 중...")
+						: tr($siteLocale, "이 환경으로 세션 시작")}</span
+			>
+		</button>
+
+		<p class="start-help text-caption-medium">
+			{copy($locale, "이번 설정으로 연습을 시작합니다. 저장된 기본 환경은 그대로 유지돼요.")}
+		</p>
+		{#if startError}
+			<p class="start-error" role="alert">{startError}</p>
+		{/if}
+	</section>
+
+	{#if showSessionModeModal}
+		<SessionModeModal onselect={selectSessionMode} />
+	{/if}
+	<TemplateSaveBar />
+</main>
+
+<style>
+	.edit-environment {
+		padding: 12px 24px;
+		border: 1px solid var(--primary);
+		border-radius: var(--radius-sm);
+		color: var(--primary);
+		text-decoration: none;
+		text-align: center;
+	}
+	.confirm-page {
+		width: 100%;
+		min-height: 100vh;
+		padding: var(--odi-page-padding-top) var(--odi-page-padding-inline)
+			var(--odi-page-padding-bottom);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-6);
+		background: var(--surface);
+	}
+
+	.page-header {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-6);
+	}
+
+	.page-label {
+		color: var(--primary);
+	}
+
+	.title-group {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+
+	.subtitle {
+		color: var(--text-secondary);
+	}
+
+	.info-card {
+		min-height: 132px;
+		padding: var(--space-3);
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 14px;
+		border-radius: var(--radius-md);
+		background: var(--surface);
+		box-shadow: var(--shadow-sm);
+	}
+
+	.info-line {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 14px;
+		color: var(--text-primary);
+		flex-wrap: wrap;
+		text-align: center;
+		word-break: keep-all;
+	}
+
+	.file-line {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-6);
+		color: var(--text-secondary);
+		flex-wrap: wrap;
+		text-align: center;
+	}
+
+	.dot {
+		font-size: 22px;
+		font-weight: var(--font-bold);
+		color: var(--text-primary);
+	}
+
+	.start-area {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-3);
+		margin-top: var(--space-2);
+	}
+
+	.start-link {
+		width: 464px;
+		max-width: 100%;
+		height: 63px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: var(--space-2);
+		padding-inline: var(--space-5);
+		border-radius: var(--radius-sm);
+		border: 0;
+		background: var(--primary);
+		color: var(--text-on-primary);
+		text-decoration: none;
+	}
+
+	.start-link:hover {
+		background: var(--primary-hover);
+	}
+	.start-link:disabled {
+		cursor: wait;
+		opacity: 0.7;
+	}
+	.start-link img {
+		width: 24px;
+		height: 24px;
+	}
+
+	.start-help {
+		color: var(--text-disabled);
+		text-align: center;
+		line-height: 1.45;
+	}
+
+	.start-error {
+		margin: 0;
+		color: var(--accent);
+		font-size: 14px;
+	}
+
+	@media (max-width: 640px) {
+		.confirm-page {
+			padding: 24px 16px 32px;
+		}
+
+		.info-card {
+			align-items: flex-start;
+			padding: 20px;
+		}
+
+		.info-line,
+		.file-line {
+			align-items: flex-start;
+			justify-content: flex-start;
+			text-align: left;
+		}
+
+		.info-line .dot {
+			display: none;
+		}
+	}
+</style>

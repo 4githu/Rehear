@@ -1,0 +1,389 @@
+<!-- src/routes/session/presentation/ready/+page.svelte -->
+<script lang="ts">
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
+	import { onDestroy, onMount } from 'svelte';
+
+	import { session } from '$lib/odi/stores';
+	import { auth } from '$lib/stores/mainauth';
+	import Button from '$lib/odi/components/common/Button.svelte';
+
+	const sessionStore = session as any;
+
+	let pinCode = $state('');
+	let preSessionState = $state('waiting');
+	let sessionId = $state(null as string | null);
+	let isRegenerating = $state(false);
+	let sessionMode = $state<'waiting' | 'experience' | 'regular'>('waiting');
+	let isExperienceStarting = $state(false);
+	let isRegularStarting = $state(false);
+	let experienceError = $state('');
+	let pollingError = $state('');
+	let reportStatus = $state('not_started');
+	let isRetryingReport = $state(false);
+	const isExperienceSession = $derived(sessionMode === 'experience');
+	const EXPERIENCE_ACCOUNT_EMAIL = 'xrealrehear@gmail.com';
+
+	function syncFromSessionStore(value: any = sessionStore) {
+		const preSession = value.pre_session ?? value.preSession ?? {};
+
+		pinCode = value.pin_code ?? value.pinCode ?? '';
+		preSessionState = preSession.state ?? 'waiting';
+		sessionId = preSession.session_id ?? preSession.sessionId ?? null;
+		reportStatus = preSession.report_status ?? 'not_started';
+	}
+
+
+	onMount(() => {
+		syncFromSessionStore();
+
+		if (pinCode) {
+			sessionMode = page.url.searchParams.get('mode') === 'experience' ? 'experience' : 'regular';
+			void startPolling();
+		} else {
+			void startRequestedSession();
+		}
+		const unsubscribe = sessionStore.subscribe?.((value: any) => {
+			syncFromSessionStore(value);
+		});
+
+		return () => {
+			if (typeof unsubscribe === 'function') {
+				unsubscribe();
+			}
+		};
+	});
+
+	onDestroy(() => {
+		sessionStore.stopPolling?.();
+	});
+
+	const canOpenReport = $derived(preSessionState === 'finished' && !!sessionId);
+
+	async function startPolling() {
+		pollingError = '';
+
+		try {
+			await sessionStore.pollUntilFinished?.();
+		} catch (error) {
+			pollingError = error instanceof Error ? error.message : '세션 상태를 확인하지 못했습니다.';
+		}
+	}
+
+	async function startRequestedSession() {
+		try {
+			const requestedMode = page.url.searchParams.get('mode');
+			// 체험 권한은 메모리에 남은 계정값이 아니라 현재 인증 쿠키로 매번 확인합니다.
+			const payload = await auth.check();
+			const email = payload?.data?.email?.trim().toLowerCase() ?? '';
+			const canUseExperience = email === EXPERIENCE_ACCOUNT_EMAIL;
+
+			sessionStore.clear?.();
+
+			if (requestedMode === 'experience' && canUseExperience) {
+				await startExperienceSession();
+				return;
+			}
+
+			await startRegularSession();
+		} catch (error) {
+			sessionMode = 'waiting';
+			experienceError = error instanceof Error ? error.message : '세션을 시작하지 못했습니다.';
+		}
+	}
+
+	async function startExperienceSession() {
+		if (isExperienceStarting || isRegularStarting) return;
+
+		isExperienceStarting = true;
+		experienceError = '';
+		sessionMode = 'experience';
+
+		try {
+			await sessionStore.startExperiencePresentation?.();
+			syncFromSessionStore(sessionStore.get?.());
+			void startPolling();
+		} catch (error) {
+			sessionMode = 'waiting';
+			experienceError = error instanceof Error ? error.message : '체험 세션을 시작하지 못했습니다.';
+		} finally {
+			isExperienceStarting = false;
+		}
+	}
+
+	async function startRegularSession() {
+		if (isExperienceStarting || isRegularStarting) return;
+
+		isRegularStarting = true;
+		experienceError = '';
+		sessionMode = 'regular';
+
+		try {
+			pollingError = '';
+			await sessionStore.startFromCurrentTemplate?.();
+			syncFromSessionStore(sessionStore.get?.());
+			void startPolling();
+		} catch (error) {
+			sessionMode = 'waiting';
+			experienceError = error instanceof Error ? error.message : '일반 세션을 시작하지 못했습니다.';
+		} finally {
+			isRegularStarting = false;
+		}
+	}
+
+	async function regeneratePin() {
+		if (isRegenerating) return;
+
+		isRegenerating = true;
+
+		try {
+			const modeToRestart = sessionMode;
+			sessionStore.clear?.();
+
+			if (modeToRestart === 'experience') {
+				await startExperienceSession();
+			} else {
+				await startRegularSession();
+			}
+			return;
+		} finally {
+			isRegenerating = false;
+		}
+	}
+
+	async function openReport() {
+		if (!canOpenReport || !sessionId) return;
+
+		await goto(`/report/${sessionId}`);
+	}
+	async function retryReport() {
+		if (!pinCode || isRetryingReport) return;
+		isRetryingReport = true;
+		experienceError = '';
+		try {
+			await sessionStore.retryReport?.(pinCode);
+			await sessionStore.refreshPreSession?.(pinCode);
+		} catch (error) {
+			experienceError =
+				error instanceof Error ? error.message : '리포트 생성 재시도에 실패했습니다.';
+		} finally {
+			isRetryingReport = false;
+		}
+	}
+</script>
+
+<main class="ready-page">
+	<div class="glow" aria-hidden="true"></div>
+
+	<section class="ready-content">
+		<div class="ready-title-group">
+			<h1 class="text-title-main">
+				{sessionMode === 'waiting' ? '세션을 준비하고 있습니다' : '설정한 세션이 준비되었습니다'}
+			</h1>
+			<p class="pin-help text-title-middle">
+				{sessionMode === 'waiting'
+					? '잠시만 기다려 주세요'
+					: '생성된 PIN 번호를 가상 환경에서 입력하여 준비된 세션을 진행하세요'}
+			</p>
+		</div>
+
+		{#if isExperienceSession}
+			<p class="experience-chip">체험 세션</p>
+		{/if}
+		<p class="pin-code" class:demo-pin={isExperienceSession}>{pinCode || '----'}</p>
+
+		<div class="ready-actions">
+			{#if sessionMode === 'waiting'}
+				<Button
+					variant="primary"
+					size="lg"
+					width="464px"
+					disabled={!experienceError || isExperienceStarting || isRegularStarting}
+					onclick={startRequestedSession}
+				>
+					{experienceError ? '다시 시도하기' : '세션 준비 중...'}
+				</Button>
+			{:else}
+				<Button
+					variant="soft"
+					size="lg"
+					width="464px"
+					disabled={isRegenerating}
+					onclick={regeneratePin}>PIN 번호 다시 생성하기</Button
+				>
+			{/if}
+
+			{#if canOpenReport}
+				<Button variant="primary" size="lg" width="464px" onclick={openReport}>
+					결과 리포트 보기
+				</Button>
+			{:else}
+				<Button variant="primary" size="lg" width="464px" disabled>
+					발표가 완료되면 볼 수 있습니다
+				</Button>
+			{/if}
+
+			{#if reportStatus === 'failed'}
+				<Button
+					variant="soft"
+					size="lg"
+					width="464px"
+					disabled={isRetryingReport}
+					onclick={retryReport}
+				>
+					{isRetryingReport ? '리포트 재생성 중...' : '리포트 생성 다시 시도'}
+				</Button>
+			{/if}
+
+			<p class="report-help text-caption-medium">
+				{reportStatus === 'generating' || reportStatus === 'queued'
+					? '전체 발표를 분석하고 있어요. 잠시만 기다려 주세요.'
+					: reportStatus === 'failed'
+						? '리포트 생성에 실패했습니다. 발표 데이터는 보존되어 있습니다.'
+						: canOpenReport
+							? '세션이 완료되었습니다. 리포트를 확인할 수 있습니다.'
+							: '발표가 끝나고 분석이 완료되면 리포트를 확인할 수 있습니다.'}
+			</p>
+
+			{#if experienceError}
+				<p class="experience-error" role="alert">{experienceError}</p>
+			{/if}
+
+			{#if pollingError}
+				<div class="polling-error" role="alert">
+					<p>{pollingError}</p>
+					<button type="button" class="retry-button clickable" onclick={startPolling}
+						>상태 다시 확인</button
+					>
+				</div>
+			{/if}
+		</div>
+	</section>
+</main>
+
+<style>
+	.ready-page {
+		position: relative;
+		width: 100%;
+		min-height: 100vh;
+		display: flex;
+		justify-content: center;
+		background: var(--surface);
+		overflow: hidden;
+	}
+
+	.glow {
+		position: absolute;
+		width: 160vw;
+		height: 120vh;
+		left: 50%;
+		top: -70vh;
+		transform: translateX(-50%);
+		border-radius: var(--radius-full);
+		background: radial-gradient(
+			ellipse at center,
+			rgba(0, 51, 255, 0.28) 0%,
+			rgba(0, 51, 255, 0) 68%
+		);
+		pointer-events: none;
+	}
+
+	.ready-content {
+		position: relative;
+		z-index: 1;
+		width: min(900px, 100%);
+		padding: clamp(72px, 10vh, 120px) clamp(16px, 3vw, 40px) 64px;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+	}
+
+	.ready-title-group {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: var(--space-4);
+	}
+
+	.pin-help {
+		color: var(--primary);
+		font-weight: var(--font-medium);
+	}
+
+	.pin-code {
+		margin-top: clamp(48px, 8vh, 96px);
+		color: var(--brand-dark);
+		font-family: var(--font-family);
+		font-size: clamp(84px, 14vw, 190px);
+		font-weight: var(--font-medium);
+		line-height: 1;
+		letter-spacing: clamp(2px, 0.55vw, 7.6px);
+	}
+
+	.pin-code.demo-pin {
+		color: var(--primary);
+	}
+
+	.experience-chip {
+		margin: 46px 0 -74px;
+		padding: 6px 12px;
+		border-radius: var(--radius-full);
+		background: rgba(0, 51, 255, 0.08);
+		color: var(--primary);
+		font-size: 14px;
+		font-weight: var(--font-bold);
+	}
+
+	.ready-actions {
+		margin-top: clamp(48px, 7vh, 86px);
+		width: 464px;
+		max-width: 100%;
+		display: flex;
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--space-4);
+	}
+
+	.report-help {
+		color: var(--text-disabled);
+	}
+
+	.experience-error {
+		margin: 0;
+		color: var(--accent);
+	}
+
+	.polling-error {
+		display: grid;
+		gap: var(--space-2);
+		justify-items: center;
+		color: var(--accent);
+	}
+	.polling-error p {
+		margin: 0;
+	}
+	.retry-button {
+		padding: 8px 14px;
+		border: 1px solid currentColor;
+		border-radius: var(--radius-sm);
+		background: var(--surface);
+		color: var(--primary);
+		font-weight: var(--font-medium);
+	}
+
+	@media (max-height: 760px) and (min-width: 641px) {
+		.ready-content {
+			padding-top: 48px;
+		}
+
+		.pin-code {
+			margin-top: 30px;
+			font-size: 118px;
+		}
+
+		.ready-actions {
+			margin-top: 34px;
+		}
+	}
+</style>

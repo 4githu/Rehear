@@ -1,0 +1,578 @@
+import type {
+	AiReportModel,
+	AiReportResult,
+	AuraReport,
+	AuraSession,
+	CalendarEvent,
+	ClinicRound,
+	ParentSettlementItem,
+	RoundModality,
+	School,
+	SchoolSettlement,
+	Student,
+	TargetReport
+} from './types';
+
+// 개발·터널 환경에서도 로그인과 API가 같은 브라우저 출처를 사용해야
+// HttpOnly 쿠키가 빠지지 않는다. VITE_SUSHIFASTURL을 비워 두면 Vite proxy를 사용한다.
+const configuredApi = import.meta.env.VITE_SUSHIFASTURL || '';
+export const API_BASE = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?$/i.test(
+	configuredApi.replace(/\/$/, '')
+)
+	? ''
+	: configuredApi;
+
+type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown };
+export type SettlementRegenerationApproval = {
+	snapshotDigest: string;
+	newTotal: number;
+	proposedDigest: string;
+};
+export type SettlementRequestPlan = {
+	requestId: string;
+	snapshotId: number;
+	snapshotDigest: string;
+	planDigest: string;
+	status: string;
+	messageCount: number;
+	matchedRooms: Array<{ room: string; evidence: string; parentCharge: number }>;
+	messagePreviews: Array<{ room: string; text: string; parentCharge: number }>;
+	exclusionSummary: {
+		acceptedStageStudents: number;
+		unknownStageStudents: number;
+		zeroParentChargeStudents: number;
+	};
+	excludedStudentCount: number;
+};
+
+export type SettlementRequestResult = {
+	requestId: string;
+	status: 'succeeded' | 'manual_check' | 'retryable';
+	sentCount: number;
+	alreadySentCount?: number;
+	retryable?: boolean;
+};
+
+export function settlementRegenerationApproval(
+	cause: unknown
+): SettlementRegenerationApproval | null {
+	if (
+		!(cause instanceof PersonalApiError) ||
+		cause.status !== 409 ||
+		cause.code !== 'snapshot_regeneration_approval_required'
+	)
+		return null;
+	const detail = cause.detail as Partial<SettlementRegenerationApproval> | null;
+	if (
+		!detail ||
+		typeof detail.snapshotDigest !== 'string' ||
+		!detail.snapshotDigest ||
+		typeof detail.proposedDigest !== 'string' ||
+		!detail.proposedDigest ||
+		!Number.isSafeInteger(detail.newTotal) ||
+		(detail.newTotal ?? -1) < 0
+	)
+		return null;
+	return {
+		snapshotDigest: detail.snapshotDigest,
+		newTotal: detail.newTotal!,
+		proposedDigest: detail.proposedDigest
+	};
+}
+export type ReportAttachment = {
+	id: number;
+	kind: 'blank_test' | 'problem_solving';
+	name: string;
+	mimeType: string;
+	byteSize: number;
+	createdAt: string;
+};
+
+export class PersonalApiError extends Error {
+	status: number;
+	code?: string;
+	detail?: unknown;
+
+	constructor(status: number, message: string, code?: string, detail?: unknown) {
+		super(message);
+		this.name = 'PersonalApiError';
+		this.status = status;
+		this.code = code;
+		this.detail = detail;
+	}
+}
+
+export type TargetRepricingChange = {
+	roundId: number;
+	oldAmount: number;
+	newAmount: number;
+	delta: number;
+	paid: boolean;
+	hasSnapshot: boolean;
+};
+
+export function targetRepricingPreview(
+	cause: unknown,
+	roundId: number
+): TargetRepricingChange | null {
+	if (
+		!(cause instanceof PersonalApiError) ||
+		cause.status !== 409 ||
+		cause.code !== 'repricing_approval_required'
+	)
+		return null;
+	const detail = cause.detail as { changes?: TargetRepricingChange[] } | null;
+	if (!Array.isArray(detail?.changes) || detail.changes.length !== 1) return null;
+	const change = detail.changes[0];
+	if (
+		!change ||
+		change.roundId !== roundId ||
+		![change.oldAmount, change.newAmount, change.delta].every(Number.isSafeInteger) ||
+		change.delta !== change.newAmount - change.oldAmount ||
+		typeof change.paid !== 'boolean' ||
+		typeof change.hasSnapshot !== 'boolean'
+	)
+		return null;
+	return change;
+}
+
+async function requestResponse(path: string, options: RequestOptions = {}): Promise<Response> {
+	let response: Response;
+	try {
+		response = await fetch(`${API_BASE}/api/personal${path}`, {
+			...options,
+			credentials: 'include',
+			headers: options.body
+				? { 'Content-Type': 'application/json', ...options.headers }
+				: options.headers,
+			body:
+				options.body instanceof Blob
+					? options.body
+					: options.body
+						? JSON.stringify(options.body)
+						: undefined
+		});
+	} catch (cause) {
+		throw new PersonalApiError(
+			0,
+			'백엔드 서버에 연결할 수 없습니다. / Cannot connect to the backend server.',
+			'backend_unreachable',
+			cause
+		);
+	}
+	if (response.status === 401) {
+		if (typeof window !== 'undefined') window.dispatchEvent(new Event('personal-auth-invalid'));
+		throw new PersonalApiError(
+			401,
+			'로그인이 만료되었습니다. 다시 로그인해주세요. / Your session expired. Please sign in again.',
+			'authentication_required'
+		);
+	}
+	if (!response.ok) {
+		const error = await response.json().catch(() => null);
+		const detail = error?.detail;
+		const message =
+			typeof detail === 'string'
+				? detail
+				: typeof detail?.message === 'string'
+					? detail.message
+					: `요청을 처리하지 못했습니다. / Request failed. (${response.status})`;
+		throw new PersonalApiError(response.status, message, detail?.code, detail);
+	}
+	return response;
+}
+
+export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+	const response = await requestResponse(path, options);
+	return response.status === 204 ? (undefined as T) : response.json();
+}
+
+export const personalApi = {
+	events(from: string, to: string) {
+		const query = new URLSearchParams({ from, to });
+		return request<CalendarEvent[]>(`/calendar/events?${query}`);
+	},
+	event(id: number) {
+		return request<CalendarEvent>(`/calendar/events/${id}`);
+	},
+	createEvent(body: {
+		title: string;
+		description: string;
+		start_time: string;
+		end_time: string | null;
+		is_all_day: boolean;
+		status: string;
+		type: string;
+		category_name?: string;
+	}) {
+		return request<CalendarEvent>('/calendar/events', { method: 'POST', body });
+	},
+	createEventSeries(body: Record<string, unknown>) {
+		return request<CalendarEvent[]>('/calendar/events/series', { method: 'POST', body });
+	},
+	updateEvent(id: number, body: Record<string, unknown>) {
+		return request<CalendarEvent>(`/calendar/events/${id}`, { method: 'PATCH', body });
+	},
+	deleteEvent(id: number) {
+		return request<void>(`/calendar/events/${id}`, { method: 'DELETE' });
+	},
+	updateEventScope(id: number, body: Record<string, unknown>) {
+		return request<CalendarEvent>(`/calendar/events/${id}/scope`, { method: 'PATCH', body });
+	},
+	deleteEventScope(id: number, scope: 'this' | 'following' | 'all') {
+		return request<void>(`/calendar/events/${id}/scope?scope=${scope}`, { method: 'DELETE' });
+	},
+	students(active?: boolean) {
+		const query = active === undefined ? '' : `?active=${active}`;
+		return request<Student[]>(`/aura/students${query}`);
+	},
+	createStudent(body: Record<string, unknown>) {
+		return request<Student>('/aura/students', { method: 'POST', body });
+	},
+	updateStudent(id: number, body: Record<string, unknown>) {
+		return request<Student>(`/aura/students/${id}`, { method: 'PATCH', body });
+	},
+	sessions(from?: string, to?: string) {
+		const query = new URLSearchParams();
+		if (from) query.set('from', from);
+		if (to) query.set('to', to);
+		return request<AuraSession[]>(`/aura/sessions?${query}`);
+	},
+	session(id: number) {
+		return request<AuraSession>(`/aura/sessions/${id}`);
+	},
+	createSession(body: Record<string, unknown>) {
+		return request<AuraSession>('/aura/sessions', { method: 'POST', body });
+	},
+	createSessionSeries(body: Record<string, unknown>) {
+		return request<AuraSession[]>('/aura/sessions/series', { method: 'POST', body });
+	},
+	updateSession(id: number, body: Record<string, unknown>) {
+		return request<AuraSession>(`/aura/sessions/${id}`, { method: 'PATCH', body });
+	},
+	deleteSession(id: number) {
+		return request<void>(`/aura/sessions/${id}`, { method: 'DELETE' });
+	},
+	createReport(sessionId: number, contentJson: unknown, sourceNotes = '') {
+		return request<{ id: number }>(`/aura/sessions/${sessionId}/report`, {
+			method: 'POST',
+			body: { source_notes: sourceNotes, content_json: contentJson }
+		});
+	},
+	updateReport(id: number, body: Record<string, unknown>) {
+		return request<AuraReport>(`/aura/reports/${id}`, { method: 'PATCH', body });
+	},
+	submitReport(id: number) {
+		return request<AuraReport>(`/aura/reports/${id}/submit`, { method: 'POST' });
+	},
+	settlements(year: number, month: number) {
+		return request<SchoolSettlement>(`/aura/settlements?year=${year}&month=${month}`, {
+			cache: 'no-store'
+		});
+	},
+	parentSettlements(year: number, month: number) {
+		return request<{ items: ParentSettlementItem[] }>(
+			`/aura/settlements/parents?year=${year}&month=${month}`,
+			{
+				cache: 'no-store'
+			}
+		);
+	},
+	updateParentSettlement(year: number, month: number, studentKey: string, paid: boolean) {
+		return request<ParentSettlementItem>('/aura/settlements/parents', {
+			method: 'PATCH',
+			body: { year, month, studentKey, paid }
+		});
+	},
+	confirmParentDelivery(year: number, month: number, studentKey: string) {
+		return request<ParentSettlementItem>('/aura/settlements/parents/delivery', {
+			method: 'PATCH',
+			body: { year, month, studentKey }
+		});
+	},
+	generateSettlements(year: number, month: number, approval?: SettlementRegenerationApproval) {
+		return request<SchoolSettlement>(`/aura/settlements/generate?year=${year}&month=${month}`, {
+			method: 'POST',
+			...(approval ? { body: approval } : {})
+		});
+	},
+	settlementExportUrl(year: number, month: number, assistantName: string, generatedAt: string) {
+		const query = new URLSearchParams({
+			year: String(year),
+			month: String(month),
+			assistant_name: assistantName.trim() || '김지후',
+			// 같은 조교명으로 다시 받더라도 이전 다운로드 캐시를 쓰지 않는다.
+			v: generatedAt
+		});
+		return `${API_BASE}/api/personal/aura/settlements/export.xlsx?${query}`;
+	},
+	previewSettlementRequest(
+		year: number,
+		month: number,
+		idempotencyKey: string,
+		senderName: string,
+		studentKey?: string
+	) {
+		return request<SettlementRequestPlan>('/aura/settlement-requests/preview', {
+			method: 'POST',
+			cache: 'no-store',
+			body: { year, month, idempotencyKey, senderName, ...(studentKey ? { studentKey } : {}) }
+		});
+	},
+	confirmSettlementRequest(requestId: string, planDigest: string, senderName: string) {
+		return request<SettlementRequestResult>(
+			`/aura/settlement-requests/${encodeURIComponent(requestId)}/confirm`,
+			{
+				method: 'POST',
+				cache: 'no-store',
+				body: { planDigest, senderName }
+			}
+		);
+	},
+	schools() {
+		return request<School[]>('/aura/schools');
+	},
+	school(id: number) {
+		return request<School>(`/aura/schools/${id}`);
+	},
+	createSchool(body: Record<string, unknown>) {
+		return request<School>('/aura/schools', { method: 'POST', body });
+	},
+	advanceSchoolStages() {
+		return request<School[]>('/aura/schools/advance-stage', { method: 'POST' });
+	},
+	updateSchool(id: number, body: Record<string, unknown>) {
+		return request<School>(`/aura/schools/${id}`, { method: 'PATCH', body });
+	},
+	moveSchool(id: number, direction: 'up' | 'down') {
+		return request<School>(`/aura/schools/${id}/move?direction=${direction}`, {
+			method: 'POST'
+		});
+	},
+	reorderSchools(ids: number[]) {
+		return request<School[]>('/aura/schools/reorder', { method: 'PUT', body: { school_ids: ids } });
+	},
+	deleteSchool(id: number) {
+		return request<void>(`/aura/schools/${id}`, { method: 'DELETE' });
+	},
+	schoolExportUrl(id: number) {
+		return `${API_BASE}/api/personal/aura/schools/${id}/export.json`;
+	},
+	rounds(from?: string, to?: string, schoolId?: number) {
+		const query = new URLSearchParams();
+		if (from) query.set('from', from);
+		if (to) query.set('to', to);
+		if (schoolId) query.set('school_id', String(schoolId));
+		return request<ClinicRound[]>(`/aura/rounds?${query}`);
+	},
+	round(id: number) {
+		return request<ClinicRound>(`/aura/rounds/${id}`);
+	},
+	createRound(body: Record<string, unknown>) {
+		return request<ClinicRound>('/aura/rounds', { method: 'POST', body });
+	},
+	createRoundSeries(body: Record<string, unknown>) {
+		return request<ClinicRound[]>('/aura/rounds/series', { method: 'POST', body });
+	},
+	updateRound(id: number, body: Record<string, unknown>) {
+		return request<ClinicRound & { affectedRoundIds?: number[] }>(`/aura/rounds/${id}`, {
+			method: 'PATCH',
+			body
+		});
+	},
+	roundModalityPreview(id: number, scope: 'following' | 'all' = 'following') {
+		return request<{ scope: 'following' | 'all'; rounds: ClinicRound[]; roundState: string }>(
+			`/aura/rounds/${id}/modality-preview?scope=${scope}`
+		);
+	},
+	updateRoundModalityFollowing(
+		id: number,
+		modality: RoundModality,
+		preview: { rounds: ClinicRound[]; roundState: string }
+	) {
+		return request<{ affectedRoundIds: number[] }>(`/aura/rounds/${id}`, {
+			method: 'PATCH',
+			body: {
+				scope: 'following',
+				modality,
+				expected_round_ids: preview.rounds.map((round) => round.id),
+				expected_round_state: preview.roundState
+			}
+		});
+	},
+	deleteRound(id: number, scope: 'this' | 'following' | 'all' = 'this') {
+		return request<void>(`/aura/rounds/${id}${scope === 'this' ? '' : `?scope=${scope}`}`, {
+			method: 'DELETE'
+		});
+	},
+	addRoundTarget(roundId: number, studentName: string, approval?: [number, number]) {
+		return request(`/aura/rounds/${roundId}/targets`, {
+			method: 'POST',
+			body: { student_name: studentName, ...(approval ? { approved_price_change: approval } : {}) }
+		});
+	},
+	deleteRoundTarget(targetId: number, approval?: [number, number]) {
+		const query = new URLSearchParams({ confirm: 'true' });
+		if (approval) {
+			query.set('approved_old_amount', String(approval[0]));
+			query.set('approved_new_amount', String(approval[1]));
+		}
+		return request<void>(`/aura/targets/${targetId}?${query}`, { method: 'DELETE' });
+	},
+	targetReport(targetId: number) {
+		return request<TargetReport>(`/aura/targets/${targetId}/report`);
+	},
+	targetReportAttachments(targetId: number) {
+		return request<ReportAttachment[]>(`/aura/targets/${targetId}/attachments`);
+	},
+	async uploadTargetReportAttachment(
+		targetId: number,
+		kind: 'blank_test' | 'problem_solving',
+		file: File
+	) {
+		const query = new URLSearchParams({ kind, filename: file.name || 'image.jpg' });
+		const response = await requestResponse(`/aura/targets/${targetId}/attachments?${query}`, {
+			method: 'POST',
+			headers: { 'Content-Type': file.type || 'image/jpeg' },
+			body: file
+		});
+		return response.json() as Promise<{ id: number; kind: string; name: string; mimeType: string }>;
+	},
+	deleteTargetReportAttachment(id: number) {
+		return request<void>(`/aura/report-attachments/${id}`, { method: 'DELETE' });
+	},
+	targetReportAttachmentUrl(id: number) {
+		return `${API_BASE}/api/personal/aura/report-attachments/${id}`;
+	},
+	nativeKakaoStatus() {
+		return request<{ enabled: boolean; destination: '나와의 채팅'; maxPages: number }>(
+			'/aura/kakao-self/status'
+		);
+	},
+	sendServerGeneratedClinicReport(targetId: number, requestId: string) {
+		return request<import('../aura/delivery-result').DeliveryResult>(
+			`/aura/targets/${targetId}/kakao-clinic/send-report`,
+			{ method: 'POST', headers: { 'X-Delivery-Request-Id': requestId } }
+		);
+	},
+	clinicDeliveryResult(targetId: number, requestId: string) {
+		return request<import('../aura/delivery-result').DeliveryResult>(
+			`/aura/targets/${targetId}/kakao-clinic/delivery-requests/${encodeURIComponent(requestId)}`
+		);
+	},
+	async targetReportPdf(targetId: number) {
+		const response = await requestResponse(`/aura/targets/${targetId}/report.pdf`, {
+			cache: 'no-store'
+		});
+		return response.blob();
+	},
+	createNativeKakaoJob(targetId: number) {
+		return request<{ jobId: string; maxPages: number; maxPageBytes: number; destination: string }>(
+			`/aura/targets/${targetId}/kakao-clinic/jobs`,
+			{ method: 'POST' }
+		);
+	},
+	async uploadNativeKakaoPage(targetId: number, jobId: string, pageNumber: number, file: File) {
+		const response = await fetch(
+			`${API_BASE}/api/personal/aura/targets/${targetId}/kakao-self/jobs/${jobId}/pages/${pageNumber}`,
+			{
+				method: 'PUT',
+				credentials: 'include',
+				headers: { 'Content-Type': file.type || 'image/jpeg' },
+				body: file
+			}
+		);
+		if (!response.ok) {
+			const body = await response.json().catch(() => null);
+			const detail = body?.detail;
+			throw new PersonalApiError(
+				response.status,
+				typeof detail === 'string'
+					? detail
+					: typeof detail?.message === 'string'
+						? detail.message
+						: '리포트 이미지 업로드에 실패했습니다.',
+				detail?.code,
+				detail
+			);
+		}
+		return response.json() as Promise<{ stored: true; page: number; byteSize: number }>;
+	},
+	sendNativeKakaoJob(targetId: number, jobId: string) {
+		return request<{ sent: true; sentCount: number; destination: string; evidence?: string }>(
+			`/aura/targets/${targetId}/kakao-clinic/jobs/${jobId}/send`,
+			{ method: 'POST' }
+		);
+	},
+	aiReportModels() {
+		return request<{ defaultModel: string; models: AiReportModel[] }>('/aura/ai/models');
+	},
+	aiReportResults(targetId: number) {
+		return request<{ targetId: number; results: AiReportResult[] }>(
+			`/aura/targets/${targetId}/ai-reports`
+		);
+	},
+	generateAiReports(
+		targetId: number,
+		body: {
+			model: string;
+			score_mode: 'auto' | 'none';
+			assessment_items?: Array<{ name: string; score: number }>;
+			force?: boolean;
+			highlight_semantics?: {
+				yellow: 'fixed' | 'unfixed' | 'not_reasked';
+				orange: 'fixed' | 'unfixed' | 'not_reasked';
+				peach: 'fixed' | 'unfixed' | 'not_reasked';
+			};
+			include_question_checks?: boolean;
+		}
+	) {
+		return request<{
+			targetId: number;
+			defaultModel: string;
+			results: AiReportResult[];
+			errors: Array<{ model: string; message: string }>;
+		}>(`/aura/targets/${targetId}/ai-reports/generate`, { method: 'POST', body });
+	},
+	updateTargetReport(reportId: number, body: Record<string, unknown>) {
+		return request<TargetReport>(`/aura/target-reports/${reportId}`, {
+			method: 'PATCH',
+			body
+		});
+	},
+	kakaoStatus() {
+		return request<{ connected: boolean; kakaoUserId: string | null }>('/kakao/status');
+	},
+	kakaoConnectUrl(returnTo: string) {
+		return request<{ url: string; redirectUri: string }>(
+			`/kakao/connect-url?return_to=${encodeURIComponent(returnTo)}`
+		);
+	},
+	kakaoSendMe(body: {
+		title: string;
+		description: string;
+		link_url: string;
+		image_urls?: string[];
+	}) {
+		return request<{ sent: boolean; sentCount: number; totalCount: number }>('/kakao/send-me', {
+			method: 'POST',
+			body
+		});
+	},
+	submitTargetReport(reportId: number) {
+		return request<TargetReport>(`/aura/target-reports/${reportId}/submit`, {
+			method: 'POST'
+		});
+	},
+	saveRoundTemplate(
+		schoolId: number,
+		progressStage: import('../aura/stages').ProgressStage,
+		roundNumber: number,
+		contentJson: unknown
+	) {
+		return request<{ version: number }>(
+			`/aura/schools/${schoolId}/rounds/${roundNumber}/template`,
+			{ method: 'POST', body: { content_json: contentJson, progress_stage: progressStage } }
+		);
+	}
+};

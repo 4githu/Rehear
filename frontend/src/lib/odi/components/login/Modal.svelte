@@ -1,0 +1,123 @@
+<!-- src/lib/odi/components/login/Modal.svelte -->
+<script lang="ts">
+ import { locale as siteLocale, copy as tr } from "$lib/odi/i18n";
+	import type { Snippet } from "svelte";
+
+	let {
+		children,
+		onClose,
+		labelledby,
+		width = "536px",
+		minHeight = "600px",
+		panelClass = ""
+	}: {
+		children: Snippet;
+		onClose?: () => void;
+		labelledby?: string;
+		width?: string;
+		minHeight?: string;
+		panelClass?: string;
+	} = $props();
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === "Escape") {
+			onClose?.();
+		}
+	}
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+<div class="modal-root" style={`--modal-width: ${width}; --modal-min-height: ${minHeight};`}>
+	<button
+		type="button"
+		class="modal-backdrop"
+		aria-label={tr($siteLocale, "모달 닫기")}
+		onclick={onClose}
+	></button>
+
+	<dialog
+		open
+		class={`modal-panel ${panelClass}`}
+		aria-labelledby={labelledby}
+	>
+		{@render children()}
+	</dialog>
+</div>
+
+<style>
+	.modal-root {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+
+		display: flex;
+		align-items: center;
+		justify-content: center;
+
+		padding: var(--space-6);
+		overflow: auto;
+	}
+
+	.modal-backdrop {
+		position: absolute;
+		inset: 0;
+
+		width: 100%;
+		height: 100%;
+
+		background: rgba(255, 255, 255, 0.72);
+		backdrop-filter: blur(1px);
+	}
+
+	.modal-panel {
+		position: relative;
+		z-index: 1;
+
+		width: min(var(--modal-width), calc(100vw - 48px));
+		max-width: 100%;
+		min-height: min(var(--modal-min-height), calc(100dvh - 48px));
+		max-height: calc(100dvh - 48px);
+
+		margin: 0;
+		padding: 0;
+
+		border: none;
+		border-radius: var(--radius-md);
+
+		background: var(--surface);
+		color: var(--text-primary);
+
+		box-shadow: 0 0 16px rgba(0, 0, 0, 0.15);
+
+		overflow-x: hidden;
+		overflow-y: auto;
+	}
+
+	.modal-panel::backdrop {
+		background: transparent;
+	}
+
+	@media (max-height: 720px) {
+		.modal-root {
+			align-items: flex-start;
+			overflow: auto;
+		}
+
+		.modal-panel {
+			margin-block: var(--space-6);
+		}
+	}
+
+	@media (max-width: 560px) {
+		.modal-root {
+			padding: 12px;
+		}
+
+		.modal-panel {
+			width: calc(100vw - 24px);
+			min-height: min(var(--modal-min-height), calc(100dvh - 24px));
+			max-height: calc(100dvh - 24px);
+		}
+	}
+</style>

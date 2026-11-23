@@ -1,0 +1,320 @@
+<script lang="ts">
+ import { locale as siteLocale, copy as tr } from "$lib/odi/i18n";
+	import { locale, copy } from "$lib/odi/i18n";
+	import { onMount } from "svelte";
+
+	import SessionTypeCard from "$lib/odi/components/session/SessionTypeCard.svelte";
+	import Button from "$lib/odi/components/common/Button.svelte";
+
+	import {
+		Close
+	} from "$lib/odi/icons";
+
+	import PresentationImage from "$lib/odi/assets/session-presentation.png";
+	import InterviewImage from "$lib/odi/assets/session-interview.png";
+
+	type SessionType =
+		| "presentation"
+		| "interview";
+
+	let {
+		onclose,
+		onselect,
+		onload
+	}: {
+		onclose?: () => void;
+		onselect?: (type: SessionType) => void;
+		onload?: () => void;
+	} = $props();
+
+	let selectedType = $state<SessionType | null>(null);
+
+	function close() {
+		onclose?.();
+	}
+
+	function startSelectedSession() {
+		if (selectedType === null) return;
+
+		onselect?.(selectedType);
+	}
+
+	function loadPrevious() {
+		onload?.();
+	}
+
+	function handleKeydown(event: KeyboardEvent) {
+		if (event.key === "Escape") {
+			close();
+		}
+	}
+
+	onMount(() => {
+		window.addEventListener(
+			"keydown",
+			handleKeydown
+		);
+
+		return () => {
+			window.removeEventListener(
+				"keydown",
+				handleKeydown
+			);
+		};
+	});
+
+	function handleOverlayKeydown(event: KeyboardEvent) {
+		if (
+			event.key === "Escape" ||
+			event.key === "Enter" ||
+			event.key === " "
+		) {
+			event.preventDefault();
+			close();
+		}
+	}
+</script>
+
+<div
+	class="modal-overlay"
+	role="presentation"
+	tabindex="-1"
+	onclick={close}
+>
+	<div
+		class="popup-card"
+		role="button"
+		tabindex="0"
+		onclick={(event) => event.stopPropagation()}
+		onkeydown={handleOverlayKeydown}
+	>
+		<button
+			type="button"
+			class="close-button clickable"
+			aria-label={copy($locale, "닫기")}
+			onclick={close}
+		>
+			<img
+				src={Close}
+				alt=""
+			/>
+		</button>
+
+		<div class="modal-content">
+
+			<header class="modal-header">
+
+				<h2
+					id="session-start-title"
+					class="modal-title"
+				>
+					{copy($locale, "새 세션을 시작할까요?")}
+				</h2>
+
+				<p class="modal-description text-caption-medium">
+					{tr($siteLocale, "이전 입력값은 가져오지 않고, 기본 설정으로 새 연습을 시작해요.")}
+				</p>
+
+			</header>
+
+			<div class="card-row">
+
+				<SessionTypeCard
+					title={copy($locale, "발표 연습")}
+					description={tr($siteLocale, "발표 시뮬레이션을 통해 전달력과 설득력을 향상시켜요.")}
+					image={PresentationImage}
+					selected={selectedType === "presentation"}
+					onselect={() => selectedType = "presentation"}
+				/>
+
+				<SessionTypeCard
+					title={copy($locale, "면접 연습")}
+					description={tr($siteLocale, "면접 시뮬레이션으로 질문 대응력을 키워요.")}
+					image={InterviewImage}
+					selected={selectedType === "interview"}
+					onselect={() => selectedType = "interview"}
+				/>
+
+			</div>
+
+			<Button
+				variant="primary"
+				width="100%"
+				disabled={!selectedType}
+				onclick={startSelectedSession}
+			>
+				{copy($locale, "기본 설정으로 시작하기")}
+			</Button>
+
+			<button
+				type="button"
+				class="load-button clickable"
+				onclick={loadPrevious}
+			>
+				{copy($locale, "기존 세션 불러오기")}
+			</button>
+
+		</div>
+
+	</div>
+
+</div>
+
+<style>
+.modal-overlay{
+
+	position:fixed;
+
+	inset:0;
+
+	z-index:1000;
+
+	display:flex;
+
+	align-items:center;
+	justify-content:center;
+
+	padding:40px;
+
+	background:rgba(3,8,18,.55);
+
+	backdrop-filter:blur(2px);
+	overflow-y:auto;
+}
+
+
+
+.popup-card{
+	position:relative;
+
+	width:760px;
+	max-width:100%;
+
+	background:var(--surface);
+
+	border-radius:var(--radius-md);
+
+	box-shadow:0 0 16px rgba(0,0,0,.15);
+}
+
+.close-button{
+
+	position:absolute;
+
+	top:24px;
+	right:24px;
+
+	width:32px;
+	height:32px;
+
+	display:flex;
+
+	align-items:center;
+	justify-content:center;
+}
+
+.close-button img{
+
+	width:20px;
+	height:20px;
+}
+
+.modal-content{
+
+	padding:56px 40px 40px;
+
+	display:flex;
+
+	flex-direction:column;
+
+	align-items:center;
+
+	gap:24px;
+}
+
+.modal-header{
+
+	width:100%;
+
+	display:flex;
+
+	flex-direction:column;
+
+	align-items:center;
+
+	gap:12px;
+
+	text-align:center;
+}
+
+.modal-title{
+
+	color:var(--brand-black);
+
+	font-size:24px;
+
+	font-weight:700;
+}
+
+.modal-description{
+
+	color:var(--text-secondary);
+}
+
+.card-row{
+
+	width:100%;
+
+	display:flex;
+
+	justify-content:center;
+
+	gap:28px;
+}
+
+.load-button{
+
+	width:100%;
+	height:64px;
+
+	display:flex;
+
+	align-items:center;
+	justify-content:center;
+
+	border-radius:var(--radius-sm);
+
+	background:var(--blue-light);
+
+	color:var(--primary);
+
+	font-weight:500;
+
+	transition:var(--transition-fast);
+}
+
+.load-button:hover{
+
+	background:var(--blue-light-hover);
+}
+
+@media (max-width: 720px) {
+	.modal-overlay {
+		align-items:flex-start;
+		padding:16px;
+	}
+
+	.popup-card {
+		margin-block:12px;
+	}
+
+	.modal-content {
+		padding:52px 18px 24px;
+	}
+
+	.card-row {
+		flex-direction:column;
+		gap:14px;
+	}
+}
+</style>

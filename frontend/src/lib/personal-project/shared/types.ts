@@ -1,0 +1,223 @@
+import type { AnalysisDocument, EditorDocument } from '$lib/textediter/types';
+
+export type EventStatus = 'passive' | 'todo' | 'done';
+export type AttendanceStatus = 'scheduled' | 'completed' | 'cancelled' | 'absent';
+export type ReportStatus = 'draft' | 'ready' | 'submitted';
+
+export type CalendarEvent = {
+	timeUnspecified?: boolean;
+	hideInMonth?: boolean;
+	taskAvailableFrom?: string | null;
+	taskDueAt?: string | null;
+	taskUnplanned?: boolean;
+	completionSource?: 'manual' | 'external';
+	location?: string;
+	webUrl?: string;
+	projectId?: number | null;
+	canEdit?: boolean;
+	googleAccount?: string;
+	googleCalendar?: string;
+	id: number;
+	title: string;
+	description: string;
+	startTime: string;
+	endTime: string | null;
+	isAllDay: boolean;
+	status: EventStatus;
+	type: string;
+	groupName: string | null;
+	categoryName: string | null;
+	serviceLink?: string | null;
+	recurrenceGroupId: string | null;
+	recurrenceIndex: number | null;
+};
+
+export type Student = {
+	id: number;
+	name: string;
+	schoolName: string;
+	affiliation: string;
+	memo: string;
+	isActive: boolean;
+};
+
+export type AuraReport = {
+	id: number;
+	status: ReportStatus;
+	contentJson: EditorDocument;
+	analysisJson: AnalysisDocument;
+	sourceNotes: string;
+	submittedAt: string | null;
+};
+
+export type AuraSession = {
+	id: number;
+	eventId: number;
+	studentId: number;
+	studentName: string;
+	schoolName: string;
+	title: string;
+	description: string;
+	startTime: string;
+	endTime: string | null;
+	attendanceStatus: AttendanceStatus;
+	reportRequired: boolean;
+	hourlyRate: number;
+	amount: number;
+	paymentStatus: 'pending' | 'paid';
+	report: AuraReport | null;
+};
+
+export type Settlement = {
+	year: number;
+	month: number;
+	totalAmount: number;
+	completedCount: number;
+	items: AuraSession[];
+};
+
+export type School = {
+	id: number;
+	name: string;
+	admissionYear: number;
+	schoolName: string;
+	memo: string;
+	isActive: boolean;
+	roundCount: number;
+	priority: number;
+	termStatus: 'active' | 'ended';
+	currentStage: import('../aura/stages').ProgressStage;
+	recommendedStage: import('../aura/stages').ProgressStage;
+	freeForThreePlus: boolean;
+	rounds?: ClinicRound[];
+};
+
+export type RoundTarget = {
+	id: number;
+	studentName: string;
+	report: {
+		id: number;
+		status: ReportStatus;
+		templateVersion: number | null;
+		submittedAt: string | null;
+	} | null;
+};
+
+export type RoundModality = 'in_person' | 'remote' | 'unverified';
+
+export type ClinicRound = {
+	id: number;
+	modality: RoundModality;
+	schoolId: number;
+	schoolName: string;
+	progressStage: import('../aura/stages').ProgressStage;
+	parentFreeForThreePlus: boolean;
+	eventId: number;
+	roundNumber: number;
+	roundNumbers: number[];
+	roundLabel: string;
+	startTime: string;
+	endTime: string;
+	description: string;
+	attendanceStatus: 'scheduled' | 'completed' | 'cancelled';
+	reportRequired: boolean;
+	hourlyRate: number;
+	amount: number;
+	paymentStatus: 'pending' | 'paid';
+	seriesGroupId: string | null;
+	seriesIndex: number | null;
+	targets: RoundTarget[];
+};
+
+export type SchoolSettlement = {
+	year: number;
+	month: number;
+	totalAmount: number;
+	completedCount: number;
+	settlementCount: number;
+	generatedAt: string | null;
+	items: ClinicRound[];
+};
+
+export type ParentSettlementStatus = 'pending' | 'paid' | 'needs_review';
+
+export type ParentSettlementItem = {
+	studentKey: string;
+	status: ParentSettlementStatus;
+	amount: number;
+	paidAmount: number;
+	updatedAt: string | null;
+	manualDeliveryConfirmed: boolean;
+	manualDeliveryConfirmedAt: string | null;
+};
+
+export type TargetReport = {
+	id: number;
+	targetId: number;
+	studentName: string;
+	schoolId: number;
+	schoolName: string;
+	progressStage: import('../aura/stages').ProgressStage;
+	roundNumber: number;
+	roundNumbers: number[];
+	roundLabel: string;
+	startTime: string;
+	endTime: string;
+	templateVersion: number | null;
+	contentJson: EditorDocument;
+	analysisJson: AnalysisDocument;
+	sourceNotes: string;
+	questionChecks: Record<string, boolean>;
+	lectureProgress: number;
+	lectureComprehension: number;
+	memoryBefore: number;
+	memoryAfter: number;
+	assessmentJson: null | {
+		formatName?: string;
+		items?: Array<{ name: string; score: number }>;
+	};
+	generatedReportJson: AiReportOutput | null;
+	aiModel: string | null;
+	clinicTargets: Array<{
+		id: number;
+		studentName: string;
+		status: ReportStatus | 'unwritten';
+	}>;
+	status: ReportStatus;
+	submittedAt: string | null;
+};
+
+export type AiReportOutput = {
+	schemaVersion: 'aura.clinic-report-output.v2';
+	runId?: number;
+	target: Record<string, unknown>;
+	assessment: null | {
+		formatName: string;
+		items: Array<{ name: string; score: number }>;
+	};
+	learningContent: { paragraphs: string[] };
+	problemSolvingNote?: string;
+};
+
+export type AiReportResult = {
+	runId: number;
+	provider: string;
+	model: string;
+	cacheMode: 'implicit' | 'explicit';
+	reused: boolean;
+	inputHash?: string;
+	completedAt?: string;
+	cacheNotice?: string | null;
+	output: AiReportOutput;
+};
+
+export type AiReportModel = {
+	id: string;
+	provider: string;
+	label: string;
+	description: string;
+	is_default: boolean;
+	explicit_cache: boolean;
+	available?: boolean;
+	unavailable_reason?: string | null;
+};

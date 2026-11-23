@@ -1,0 +1,215 @@
+/* ==========================================================
+   Re:hear Design System
+   theme.css
+   ========================================================== */
+
+:root {
+	/* ======================================================
+	   Brand
+	   ====================================================== */
+
+	--brand-black: #030812;
+	--brand-dark: #050632;
+	--brand-primary: #0033ff;
+	--brand-lime: #cfff5e;
+	--brand-off-white: #fafaf8;
+
+	/* ======================================================
+	   Cool Grey
+	   ====================================================== */
+
+	--cool-grey-light: #f4f5f7;
+	--cool-grey-light-hover: #eff0f3;
+	--cool-grey-light-active: #dee0e5;
+
+	--cool-grey: #969cac;
+	--cool-grey-hover: #878c9b;
+	--cool-grey-active: #787d8a;
+
+	--cool-grey-dark: #717581;
+	--cool-grey-dark-hover: #5a5e67;
+	--cool-grey-dark-active: #44464d;
+
+	--cool-grey-darker: #35373c;
+
+	/* ======================================================
+	   Blue
+	   ====================================================== */
+
+	--blue-light: #e6ebff;
+	--blue-light-hover: #d9e0ff;
+	--blue-light-active: #b0c0ff;
+
+	--blue: #0033ff;
+	--blue-hover: #002ee6;
+	--blue-active: #0029cc;
+
+	--blue-dark: #0026bf;
+	--blue-dark-hover: #001f99;
+	--blue-dark-active: #001773;
+
+	--blue-darker: #001259;
+
+	/* ======================================================
+	   Purple
+	   ====================================================== */
+
+	--purple-light: #f2f2ff;
+	--purple-light-hover: #ececff;
+	--purple-light-active: #d8d7ff;
+
+	--purple: #807dfe;
+	--purple-hover: #7371e5;
+	--purple-active: #6664cb;
+
+	--purple-dark: #605ebf;
+	--purple-dark-hover: #4d4b98;
+	--purple-dark-active: #3a3872;
+
+	--purple-darker: #2d2c59;
+
+	/* ======================================================
+	   Accent
+	   ====================================================== */
+
+	--accent-light: #f3e9ff;
+	--accent-light-hover: #eddeff;
+	--accent-light-active: #d9bbff;
+
+	--accent: #8624ff;
+	--accent-hover: #7920e6;
+	--accent-active: #6b1dcc;
+
+	--accent-dark: #651bbf;
+	--accent-dark-hover: #501699;
+	--accent-dark-active: #3c1073;
+
+	--accent-darker: #2f0d59;
+
+	/* ======================================================
+	   Lime
+	   ====================================================== */
+
+	--lime-light: #faffef;
+	--lime-light-hover: #f8ffe7;
+	--lime-light-active: #f0ffcd;
+
+	--lime: #cfff5e;
+	--lime-hover: #bae655;
+	--lime-active: #a6cc4b;
+
+	--lime-dark: #9bbf47;
+	--lime-dark-hover: #7c9938;
+	--lime-dark-active: #5d732a;
+
+	--lime-darker: #485921;
+
+	/* ======================================================
+	   Semantic
+	   ====================================================== */
+
+	--background: var(--cool-grey-light);
+
+	--surface: #ffffff;
+	--surface-secondary: var(--cool-grey-light);
+
+	--primary: var(--blue);
+	--primary-hover: var(--blue-hover);
+	--primary-active: var(--blue-active);
+
+	--text-primary: var(--cool-grey-darker);
+	--text-secondary: var(--cool-grey-dark);
+	--text-disabled: var(--cool-grey);
+
+	--text-on-primary: #ffffff;
+
+	--border: #e9ebf8;
+	--border-active: var(--primary);
+
+	--success: var(--lime);
+
+	--focus: var(--blue-light);
+
+	--overlay: rgba(3, 8, 18, 0.5);
+
+	/* ======================================================
+	   Radius
+	   ====================================================== */
+
+	--radius-xs: 4px;
+	--radius-sm: 8px;
+	--radius-md: 16px;
+	--radius-lg: 24px;
+	--radius-xl: 28px;
+	--radius-2xl: 32px;
+	--radius-pill: 40px;
+	--radius-full: 9999px;
+
+	/* ======================================================
+	   Shadow
+	   ====================================================== */
+
+	--shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+
+	--shadow-md: 0 8px 20px rgba(15, 23, 42, 0.08);
+
+	--shadow-lg: 0 18px 50px rgba(15, 23, 42, 0.08);
+
+	--shadow-card: -16px -16px 16px rgba(0, 0, 0, 0.05);
+
+	/* ======================================================
+	   Spacing
+	   ====================================================== */
+
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 20px;
+	--space-6: 24px;
+	--space-8: 32px;
+	--space-10: 40px;
+	--space-12: 48px;
+	--space-16: 64px;
+
+	/* 1920px 시안의 여백을 노트북과 모바일에서 자연스럽게 줄입니다. */
+	--odi-page-padding-inline: clamp(16px, 2.25vw, 48px);
+	--odi-page-padding-top: clamp(24px, 2.25vw, 36px);
+	--odi-page-padding-bottom: clamp(32px, 2.5vw, 44px);
+
+	/* ======================================================
+	   Transition
+	   ====================================================== */
+
+	--transition-fast: 150ms ease;
+
+	--transition-normal: 250ms ease;
+
+	--transition-slow: 400ms ease;
+}
+
+.clickable {
+	cursor: pointer;
+
+	transition:
+		background var(--transition-fast),
+		border-color var(--transition-fast),
+		color var(--transition-fast),
+		opacity var(--transition-fast),
+		transform var(--transition-fast),
+		box-shadow var(--transition-fast);
+}
+
+.clickable:active:not(:disabled) {
+	transform: scale(0.98);
+}
+
+.clickable:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+
+.clickable:disabled {
+	cursor: default;
+	pointer-events: none;
+}

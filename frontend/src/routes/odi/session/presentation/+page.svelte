@@ -1,0 +1,204 @@
+<!-- src/routes/session/presentation/+page.svelte -->
+<script lang="ts">
+	import { locale, copy } from "$lib/odi/i18n";
+	import TemplateSaveBar from '$lib/odi/components/session/TemplateSaveBar.svelte';
+	import { goto } from '$app/navigation';
+	import { onMount } from 'svelte';
+
+	import { template, type PresentationTemplate } from '$lib/odi/stores';
+	import ProgressStepper from '$lib/odi/components/session/ProgressStepper.svelte';
+	import Button from '$lib/odi/components/common/Button.svelte';
+	import PresentationSessionBasicInfoCard from '$lib/odi/components/session/PresentationSessionBasicInfoCard.svelte';
+
+	import { whiteright } from '$lib/odi/icons';
+	const steps = $derived([
+		{ label: copy($locale, "발표 기본 정보") },
+		{ label: copy($locale, "자료 업로드") },
+		{ label: copy($locale, "AI 청중 설정") },
+		{ label: copy($locale, "세션 확인") }
+	]);
+
+	let ready = $state(false);
+
+	let title = $state('');
+	let purpose = $state('');
+	let language = $state('');
+	let place = $state('');
+	let durationMinutes = $state(0);
+	let questionCount = $state(0);
+
+	function ensurePresentationDraft(): PresentationTemplate {
+		const current = template.get();
+
+		if (current?.type === 'presentation') {
+			return current;
+		}
+
+		// 새 세션 진입 중 store가 비어도 이전 recent_template를 되살리지 않습니다.
+		// 새 발표는 항상 기본값에서 시작해야 다른 사용자의 draft가 보이지 않습니다.
+		template.setDefault('presentation');
+		return template.get() as PresentationTemplate;
+	}
+
+	onMount(() => {
+		const draft = ensurePresentationDraft();
+
+		title = draft.environment.title;
+		purpose = draft.environment.purpose || '프로젝트 목적';
+		language = draft.environment.language || '한국어';
+		place = draft.environment.place;
+		durationMinutes = draft.environment.duration_minutes ?? 2;
+		questionCount = draft.environment.question_count ?? 0;
+
+		ready = true;
+	});
+
+	function syncDraft() {
+		if (!ready) return;
+
+		template.patchEnvironment({
+			title,
+			purpose,
+			language,
+			place,
+			duration_minutes: durationMinutes,
+			question_count: questionCount
+		});
+	}
+
+	const canNext = $derived(
+		title.trim().length > 0 &&
+			purpose.trim().length > 0 &&
+			language.trim().length > 0 &&
+			place.trim().length > 0 &&
+			durationMinutes > 0 &&
+			questionCount >= 0
+	);
+</script>
+
+<main class="session-page">
+	<header class="page-header">
+		<p class="page-label text-caption-main">Session Setup</p>
+
+		<div class="title-group">
+			<h1 class="text-title-main">{copy($locale, "발표 기본 정보")}</h1>
+			<p class="subtitle text-caption-main">
+				{copy($locale, "실전과 같은 환경을 설정하고, AI 청중과 함께 연습을 시작해요.")}
+			</p>
+		</div>
+	</header>
+
+	<ProgressStepper {steps} currentStep={0} />
+
+	<PresentationSessionBasicInfoCard
+		bind:title={
+			() => title,
+			(value) => {
+				title = value;
+				syncDraft();
+			}
+		}
+		bind:purpose={
+			() => purpose,
+			(value) => {
+				purpose = value;
+				syncDraft();
+			}
+		}
+		bind:language={
+			() => language,
+			(value) => {
+				language = value;
+				syncDraft();
+			}
+		}
+		bind:place={
+			() => place,
+			(value) => {
+				place = value;
+				syncDraft();
+			}
+		}
+		bind:durationMinutes={
+			() => durationMinutes,
+			(value) => {
+				durationMinutes = value;
+				syncDraft();
+			}
+		}
+		bind:questionCount={
+			() => questionCount,
+			(value) => {
+				questionCount = value;
+				syncDraft();
+			}
+		}
+	/>
+
+	<footer class="page-actions">
+		<Button variant="secondary" width="212px" onclick={() => goto('/')}>{copy($locale, "홈으로")}</Button>
+
+		<Button
+			variant="primary"
+			width="212px"
+			disabled={!canNext}
+			trailingIcon={whiteright}
+			onclick={() => goto('/session/presentation/upload')}
+		>
+			{copy($locale, "다음 단계")}
+		</Button>
+	</footer>
+	<TemplateSaveBar />
+</main>
+
+<style>
+	.session-page {
+		width: 100%;
+		min-height: 100vh;
+		padding: var(--odi-page-padding-top) var(--odi-page-padding-inline)
+			var(--odi-page-padding-bottom);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-6);
+		background: var(--surface);
+	}
+
+	.page-header {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-6);
+	}
+
+	.page-label {
+		color: var(--primary);
+	}
+
+	.title-group {
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2);
+	}
+
+	.subtitle {
+		color: var(--text-secondary);
+	}
+
+	.page-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: var(--space-4);
+	}
+
+	@media (max-width: 640px) {
+		.session-page {
+			padding: 24px 16px 32px;
+		}
+		.page-actions {
+			align-items: stretch;
+			flex-direction: column-reverse;
+		}
+		.page-actions :global(.button) {
+			width: 100% !important;
+		}
+	}
+</style>

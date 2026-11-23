@@ -1,0 +1,22 @@
+# Isolated HTTP routing candidate. TLS must terminate at a trusted ingress.
+# Do not expose this listener to the Internet or use it as a production cutover.
+{
+    admin off
+    auto_https off
+}
+
+http://:{$LISTEN_PORT} {
+    bind 127.0.0.1
+    @legacy_auth path /auth /auth/*
+    handle @legacy_auth {
+        reverse_proxy {$LEGACY_AUTH_UPSTREAM}
+    }
+    # Keep these namespaces aligned with frontend/scripts/hosting-proxy.mjs.
+    @rehear_api path /odi/db /odi/db/* /odi/files /odi/files/* /odi/coaching /odi/coaching/* /odi/xreal_rehear /odi/xreal_rehear/*
+    handle @rehear_api {
+        reverse_proxy {$REHEAR_BACKEND_UPSTREAM}
+    }
+    handle {
+        reverse_proxy {$FRONTEND_UPSTREAM}
+    }
+}

@@ -1,0 +1,283 @@
+// src/lib/odi/stores/odiuser.ts
+
+import { API_BASE as API } from '$lib/config/api';
+
+import { goto } from "$app/navigation";
+import { writable, get } from "svelte/store";
+import { auth } from "$lib/stores/mainauth";
+
+export type JsonObject = Record<string, any>;
+
+export type OdiUser = {
+  user_id: string;
+  auth_id: string | null;
+  recent_template: JsonObject | null;
+  config: JsonObject;
+  created_at: string;
+  updated_at: string;
+};
+
+export type OdiAccessStatus =
+  | "odi_authenticated"
+  | "main_authenticated_needs_odi_join"
+  | "guest";
+
+export type OdiAccessResult = {
+  status: OdiAccessStatus;
+  user: OdiUser | null;
+};
+
+const store = writable<OdiUser | null>(null);
+let accessRequest: Promise<OdiAccessResult> | null = null;
+
+async function fetchJson(res: Response) {
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    const message = data?.detail ?? data?.message ?? "요청 실패";
+    throw new Error(message);
+  }
+
+  return data;
+}
+
+export const odiuser = {
+  subscribe: store.subscribe,
+
+  get() {
+    return get(store);
+  },
+
+  set(user: OdiUser | null) {
+    store.set(user);
+  },
+
+  clear() {
+    store.set(null);
+  },
+
+  async checkAccess(): Promise<OdiAccessResult> {
+    // 새로고침 시 부모 레이아웃과 자식 페이지가 같은 인증 복구를 동시에 시작할 수 있습니다.
+    // 하나의 요청을 공유해 ODI 쿠키가 준비되기 전에 페이지 API가 나가지 않게 합니다.
+    if (accessRequest) return accessRequest;
+
+    accessRequest = (async () => {
+    // mainauth를 먼저 확인하고 auth_id로 ODI 토큰을 갱신합니다.
+    // ODI 쿠키가 아직 없을 때 /me 404를 먼저 발생시키지 않습니다.
+    const authPayload = await auth.check();
+
+    if (authPayload === null) {
+      store.set(null);
+
+      return {
+        status: "guest" as const,
+        user: null
+      };
+    }
+
+    const authId = authPayload.data?.id;
+
+    if (!authId) {
+      store.set(null);
+
+      return {
+        status: "guest" as const,
+        user: null
+      };
+    }
+
+    const loginRes = await fetch(`${API}/odi/db/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        auth_id: authId
+      })
+    });
+
+    if (loginRes.ok) {
+      const data = await loginRes.json();
+      store.set(data.user);
+
+      return {
+        status: "odi_authenticated" as const,
+        user: data.user as OdiUser
+      };
+    }
+
+    store.set(null);
+
+    return {
+      status: "main_authenticated_needs_odi_join" as const,
+      user: null
+    };
+    })();
+
+    try {
+      return await accessRequest;
+    } finally {
+      accessRequest = null;
+    }
+  },
+
+  async requireUser(): Promise<OdiUser> {
+    const currentUser = get(store);
+    if (currentUser) return currentUser;
+
+    const result = await this.checkAccess();
+    if (result.status === "odi_authenticated" && result.user) return result.user;
+
+    if (result.status === "main_authenticated_needs_odi_join") {
+      throw new Error("Re:hear 이용을 위한 계정 연결이 필요합니다.");
+    }
+
+    throw new Error("로그인 정보가 만료되었습니다. 다시 로그인해 주세요.");
+  },
+
+  async refresh(pathname: string = "") {
+    const meRes = await fetch(`${API}/odi/db/me`, {
+      credentials: "include"
+    });
+
+    if (meRes.ok) {
+      const data = await meRes.json();
+      store.set(data.user);
+      return true;
+    }
+
+    let authPayload = auth.get();
+
+    if (authPayload === null) {
+      const authOk = await auth.refresh(pathname);
+
+      if (!authOk) {
+        store.set(null);
+        return false;
+      }
+
+      authPayload = auth.get();
+    }
+
+    const authId = authPayload?.data?.id;
+
+    if (!authId) {
+      store.set(null);
+      goto("/login");
+      return false;
+    }
+
+    const loginRes = await fetch(`${API}/odi/db/login`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        auth_id: authId
+      })
+    });
+
+    if (loginRes.ok) {
+      const data = await loginRes.json();
+      store.set(data.user);
+      return true;
+    }
+
+    store.set(null);
+
+    if (pathname !== "/login") {
+      goto("/login");
+    }
+
+    return false;
+  },
+
+  async join(config: JsonObject, recent_template: JsonObject | null = null) {
+    const authPayload = auth.get();
+
+    if (authPayload === null) {
+      throw new Error("mainauth가 없습니다.");
+    }
+
+    const authId = authPayload.data?.id;
+
+    if (!authId) {
+      throw new Error("mainauth payload에 id가 없습니다.");
+    }
+
+    const res = await fetch(`${API}/odi/db/join`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        user_id: authId,
+        auth_id: authId,
+        config,
+        recent_template
+      })
+    });
+
+    const data = await fetchJson(res);
+    store.set(data.user);
+    return data.user as OdiUser;
+  },
+
+  async updateConfig(config: JsonObject) {
+    const user = get(store);
+
+    if (user === null) {
+      throw new Error("ODI 유저가 없습니다.");
+    }
+
+    const res = await fetch(`${API}/odi/db/users/${user.user_id}/config`, {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        config
+      })
+    });
+
+    const data = await fetchJson(res);
+    store.set(data.user);
+    return data.user as OdiUser;
+  },
+
+  async updateRecentTemplate(template: JsonObject | null) {
+    const user = get(store);
+
+    if (user === null) {
+      throw new Error("ODI 유저가 없습니다.");
+    }
+
+    const res = await fetch(`${API}/odi/db/users/${user.user_id}/recent-template`, {
+      method: "PUT",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        template
+      })
+    });
+
+    const data = await fetchJson(res);
+    store.set(data.user);
+    return data.user as OdiUser;
+  },
+
+  async logout() {
+    await fetch(`${API}/odi/db/logout`, {
+      method: "POST",
+      credentials: "include"
+    }).catch(() => null);
+
+    store.set(null);
+  }
+};
