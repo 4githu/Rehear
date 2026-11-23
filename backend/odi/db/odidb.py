@@ -1,6 +1,7 @@
 # odi/db/odidb.py
 
 import json
+import os
 import random
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -9,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = (BASE_DIR / "odi.db").resolve()
+DB_PATH = Path(os.environ.get("REHEAR_ODI_DB_PATH", str(BASE_DIR / "odi.db"))).resolve()
 _REPORT_SCHEMA_READY: set[Path] = set()
 SESSION_MEDIA_VERSION = "session-media-v1"
 
