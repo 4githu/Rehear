@@ -1,0 +1,50 @@
+name: Isolated validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      TMPDIR: /tmp
+      PUBLIC_FIREBASE_API_KEY: synthetic
+      PUBLIC_FIREBASE_APP_ID: synthetic
+      PUBLIC_FIREBASE_AUTH_DOMAIN: synthetic.invalid
+      PUBLIC_FIREBASE_DATABASE_URL: https://synthetic.invalid
+      PUBLIC_FIREBASE_MESSAGING_SENDER_ID: synthetic
+      PUBLIC_FIREBASE_PROJECT_ID: synthetic
+      PUBLIC_FIREBASE_STORAGE_BUCKET: synthetic.invalid
+      DATABASE_URL: /tmp/rehear-synthetic-frontend.db
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Install backend test dependencies and Caddy
+        run: |
+          python -m pip install -r backend/requirements-evc-dev.txt
+          sudo apt-get update -qq
+          sudo apt-get install -y caddy
+      - name: Exercise loopback integration
+        working-directory: backend
+        run: python -m pytest -q tests/test_ingress_contract.py
