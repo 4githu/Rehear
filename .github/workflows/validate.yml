@@ -42,6 +42,7 @@ jobs:
         env:
           BUILD_TARGET: node
         run: |
+          node --test tests/isolation/interview-tip-assets.test.mjs
           npm run build
           test -f build-node/handler.js
           SUSHI_HOST=127.0.0.1 SUSHI_PORT=55173 SUSHI_ORIGIN=http://127.0.0.1:55173 node build-node/index.js > "$RUNNER_TEMP/frontend.log" 2>&1 &

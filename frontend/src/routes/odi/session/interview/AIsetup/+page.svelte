@@ -10,7 +10,7 @@
 	import InterviewerSettingCard from '$lib/odi/components/session/InterviewAISettingCard.svelte';
 	import TipCard from '$lib/odi/components/session/TipCard.svelte';
 
-	import { Check } from '$lib/odi/icons';
+	import { Check, puplecheck } from '$lib/odi/icons';
 
 	type InterviewerPersona = 'hr' | 'practical' | 'executive' | 'mixed';
 
@@ -28,7 +28,7 @@
 
 	const tips = $derived([
 		{
-			icon: './puplecheck.svg',
+			icon: puplecheck,
 			description: tr($siteLocale, "페르소나에 따라 질문의 영역, 난이도가 조절됩니다.")
 		},
 		{
