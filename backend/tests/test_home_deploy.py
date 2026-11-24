@@ -138,6 +138,56 @@ def test_runtime_health_reports_busy_work_without_session_data(tmp_path, monkeyp
         assert client.get('/_ops/health').status_code == 404
 
 
+@pytest.mark.parametrize('ttl,age,status,expected', [
+    (7200, 599, 'running', 1),
+    (7200, 600, 'running', 1),
+    (7200, 601, 'finishing', 1),
+    (7200, 7199, 'running', 1),
+    (7200, 7200, 'running', 0),
+    (7200, 601, 'finished', 0),
+    (300, 299, 'running', 1),
+    (300, 300, 'running', 0),
+    (10000, 7200, 'running', 1),
+])
+def test_deploy_health_uses_session_store_expiry(tmp_path, monkeypatch, ttl, age, status, expected):
+    import asyncio
+    import importlib
+    import sqlite3
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    import ops_health
+    from odi.EVC.schema import SmartStartOptions
+    from odi.EVC.session_store import SessionStore
+
+    now = [0.0]
+    store = SessionStore(ttl_s=ttl, monotonic_clock=lambda: now[0])
+    options = SmartStartOptions(presentation_title='Synthetic', topic_interest=.5, prior_knowledge=.5, seed=1)
+    record, token = asyncio.run(store.create_session(options))
+    record.presentation_status = status
+    now[0] = age
+    if age < ttl:
+        assert not store._is_expired(record)
+    else:
+        assert store._is_expired(record)
+    monkeypatch.setattr(importlib.import_module('odi.EVC.session_store'), 'session_store', store)
+    db = tmp_path / 'odi.db'
+    with sqlite3.connect(db) as c:
+        c.executescript('CREATE TABLE presentation_report_jobs(status TEXT); CREATE TABLE practice_attempts(state TEXT);')
+    monkeypatch.setattr(ops_health.odidb, 'DB_PATH', db)
+    app = FastAPI(); ops_health.install(app)
+    with TestClient(app, client=('127.0.0.1', 1234)) as client:
+        response = client.get('/_ops/health')
+    assert response.json()['active_sessions'] == expected
+    monkeypatch.setattr(deploy, 'request', lambda *args, **kwargs: (200, response.content))
+    if expected:
+        with pytest.raises(deploy.Deferred):
+            deploy.check_idle({'backend_port': 1234})
+    else:
+        deploy.check_idle({'backend_port': 1234})
+    if age < ttl:
+        assert asyncio.run(store.get_authorized_session(record.session_id, token)) is record
+
+
 def test_initial_migration_restores_original_paths_on_partial_failure(tmp_path, monkeypatch):
     import sqlite3
     home = tmp_path / 'runtime'; home.mkdir()

@@ -13,7 +13,7 @@ def install(app):
         async with session_store._store_lock:
             active = sum(1 for r in session_store._sessions.values()
                          if r.presentation_status != 'finished'
-                         and session_store._clock() - r.last_access_monotonic < 600)
+                         and not session_store._is_expired(r))
         with odidb.get_conn(odidb.DB_PATH) as db:
             jobs = db.execute("SELECT count(*) FROM presentation_report_jobs WHERE status IN ('queued','generating')").fetchone()[0]
             jobs += db.execute("SELECT count(*) FROM practice_attempts WHERE state IN ('queued','analyzing')").fetchone()[0]
