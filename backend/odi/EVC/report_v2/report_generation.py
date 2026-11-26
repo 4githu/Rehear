@@ -14,6 +14,7 @@ from ..config import (
     EVC_REPORT_MAX_EVIDENCE_SEGMENTS,
     EVC_REPORT_MAX_INPUT_CHARS,
     OPENAI_EVC_MODEL,
+    OPENAI_EVC_REASONING_EFFORT,
 )
 from .report_aggregation import build_reaction_trace, build_report_evidence
 from .report_metric_catalog import DETAIL_METRIC_SPECS
@@ -67,9 +68,10 @@ class ReportInsightProvider(Protocol):
 
 
 class OpenAIReportInsightProvider:
-    def __init__(self, api_key: str | None = None, model: str = OPENAI_EVC_MODEL) -> None:
+    def __init__(self, api_key: str | None = None, model: str = OPENAI_EVC_MODEL, reasoning_effort: str | None = OPENAI_EVC_REASONING_EFFORT) -> None:
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.model = model
+        self.reasoning_effort = reasoning_effort
         self._report_cache_namespace = hashlib.sha256((self.api_key or "unconfigured").encode()).hexdigest()
 
     def generate(self, payload: dict[str, Any]) -> ReportNarrativeOutput:
@@ -102,6 +104,7 @@ class OpenAIReportInsightProvider:
                     {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
                 ],
                 response_format=ReportNarrativeOutput,
+                **({"reasoning_effort": self.reasoning_effort} if self.reasoning_effort else {}),
             )
             parsed = completion.choices[0].message.parsed
             if parsed is None:

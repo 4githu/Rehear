@@ -19,6 +19,11 @@ from odi.EVC.report_schema import AIInsight, AIInsightItem, DetailMetricNarrativ
 from odi.EVC.report_metric_catalog import DETAIL_METRIC_SPECS
 from odi.EVC.tests.test_report_generation import segment
 
+requires_research_cli = pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[3] / "tools/rehear_cli").is_dir(),
+    reason="research CLI is not shipped in the product repository",
+)
+
 
 def metric(report, name):
     return next(m for m in report.detail_analysis.delivery_metrics if m.id == name)
@@ -221,6 +226,7 @@ def test_db_failure_does_not_advance_step_without_committed_response(monkeypatch
     asyncio.run(run())
 
 
+@requires_research_cli
 def test_migrated_case_and_measurement_inventory():
     from tools.rehear_cli.migration import PRIVATE_ROOT, verify_inventory
     root = Path(__file__).resolve().parents[4]
@@ -259,6 +265,7 @@ def test_cli_delete_does_not_break_product(tmp_path):
 
 
 @pytest.mark.parametrize("command", ["doctor", "contracts", "replay", "repeat", "compare", "bench"])
+@requires_research_cli
 def test_offline_cli_commands_and_metadata(command, tmp_path):
     from odi.EVC.tests.test_rehear_assessment_boundary import pack, toy_bundle
     backend = Path(__file__).resolve().parents[3]
@@ -297,6 +304,7 @@ def test_offline_cli_commands_and_metadata(command, tmp_path):
         assert document["comparison"]["same_task"] is True
 
 
+@requires_research_cli
 def test_archive_verifier_detects_missing_and_changed_sources(tmp_path):
     from tools.rehear_cli.migration import LEGACY_ROOTS, migrate, verify_inventory
     for name in LEGACY_ROOTS:
@@ -349,6 +357,7 @@ def test_sqlite_rollback_and_retry_leave_one_segment(monkeypatch, tmp_path, inde
     asyncio.run(run())
 
 
+@requires_research_cli
 def test_legacy_case_replay_keeps_unknown_inputs_unknown():
     from tools.rehear_cli.legacy_cases import post_presentation_case
     case = {"id": "TEST_ONLY-legacy", "slides": [{"text": "合成 slide"}],
@@ -389,6 +398,7 @@ def test_initial_questions_persist_before_ready(monkeypatch, tmp_path):
     asyncio.run(run())
 
 
+@requires_research_cli
 def test_run_metadata_counts_real_retries_cache_and_failures(monkeypatch):
     from tools.rehear_cli import runs
     from rehear_ai.engines.fake import FakeEngine
@@ -412,6 +422,7 @@ def test_run_metadata_counts_real_retries_cache_and_failures(monkeypatch):
     assert "SYNTHETIC_PRIVATE_FAILURE" not in json.dumps(value)
 
 
+@requires_research_cli
 def test_bench_separates_load_first_and_warm_generation(monkeypatch):
     from tools.rehear_cli import runs
     from rehear_ai.engines.fake import FakeEngine

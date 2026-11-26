@@ -159,6 +159,35 @@ def test_quest_route_reaches_rehear_backend_not_legacy_auth(ingress):
     assert 'x-test-original-host' not in update.headers
 
 
+@pytest.mark.parametrize('error,status,code', [
+    ('configuration', 503, 'evaluation_provider_configuration_error'),
+    ('provider', 502, 'evaluation_provider_error'),
+])
+def test_quest_provider_error_json_survives_loopback_caddy(ingress, monkeypatch, error, status, code):
+    import importlib
+    from odi.EVC.evaluation import EvaluationProviderError, EvaluationProviderConfigurationError
+    router_module = importlib.import_module('odi.EVC.router')
+    async def fail(**kwargs):
+        if error == 'configuration':
+            raise EvaluationProviderConfigurationError('synthetic')
+        raise EvaluationProviderError('synthetic')
+    monkeypatch.setattr(router_module, 'update_pipeline', fail)
+    monkeypatch.setenv('DEEPGRAM_API_KEY', 'synthetic')
+    start = httpx.post(ingress + '/odi/xreal_rehear/evc/smart-start',
+                       data={'presentation_title': 'synthetic', 'seed': '10'})
+    assert start.status_code == 200, start.text
+    session = start.json()
+    response = httpx.post(ingress + '/odi/xreal_rehear/evc/update',
+        headers={'X-EVC-Session-Token': session['session_token']},
+        data={'session_id': session['session_id'],
+              'request_id': '00000000-0000-0000-0000-000000000001',
+              'expected_step': '0', 'client_time_s': '1.0'},
+        files={'audio': ('voice.wav', b'RIFF-test', 'audio/wav')})
+    assert response.status_code == status
+    assert response.headers['content-type'].startswith('application/json')
+    assert response.json()['detail']['code'] == code
+
+
 def test_all_backend_odi_namespaces_are_routed_without_screen_collisions(ingress):
     prefixes = ('/odi/db', '/odi/files', '/odi/coaching', '/odi/xreal_rehear')
     for path in app.openapi()['paths']:
